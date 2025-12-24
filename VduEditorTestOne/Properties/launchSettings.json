@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "VduEditorTestOne": {
+      "commandName": "Project",
+      "commandLineArgs": "D:\\CodePro\\lvgl_git\\VduEditor\\VduEditorTestOne\\bin\\Debug\\net9.0\\lua\\demo_button.lua"
+    }
+  }
+}
