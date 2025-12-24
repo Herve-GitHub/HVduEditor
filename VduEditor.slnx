@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="LVGLSharp.Core/LVGLSharp.Core.csproj" />
+  <Project Path="LVGLSharp.Interop/LVGLSharp.Interop.csproj" />
+  <Project Path="LVGLSharp.Runtime.Linux/LVGLSharp.Runtime.Linux.csproj" />
+  <Project Path="LVGLSharp.Windows/LVGLSharp.Runtime.Windows.csproj" />
+  <Project Path="VduEditor/VduEditor.csproj" />
+  <Project Path="VduEditorTestOne/VduEditorTestOne.csproj" />
+</Solution>
