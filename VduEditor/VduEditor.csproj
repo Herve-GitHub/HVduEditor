@@ -1,10 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +17,12 @@
     <ProjectReference Include="..\LVGLSharp.Interop\LVGLSharp.Interop.csproj" />
     <ProjectReference Include="..\LVGLSharp.Runtime.Linux\LVGLSharp.Runtime.Linux.csproj" />
     <ProjectReference Include="..\LVGLSharp.Windows\LVGLSharp.Runtime.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="lvgl.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

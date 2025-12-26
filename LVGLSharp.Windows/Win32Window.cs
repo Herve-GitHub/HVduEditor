@@ -315,10 +315,16 @@ namespace LVGLSharp.Runtime.Windows
             };
             RegisterClassEx(ref wc);
 
+            // 计算窗口居中位置
+            int screenWidth = GetScreenWidth();
+            int screenHeight = GetScreenHeight();
+            int windowX = (screenWidth - Width) / 2;
+            int windowY = (screenHeight - Height) / 2;
+
             g_hwnd = CreateWindowExW(
                 0, "LVGLSharpWin", _title,
                 WS_OVERLAPPEDWINDOW,
-                100, 100, Width, Height,
+                windowX, windowY, Width, Height,
                 IntPtr.Zero, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero
             );
 
