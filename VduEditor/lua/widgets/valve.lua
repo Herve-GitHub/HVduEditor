@@ -12,12 +12,11 @@ Valve.__widget_meta = {
     properties = {
         { name = "x", type = "number", default = 0, label = "X" },
         { name = "y", type = "number", default = 0, label = "Y" },
-        { name = "size", type = "number", default = 80, label = "尺寸", min = 8, max = 1024 },
+        { name = "size", type = "number", default = 150, label = "尺寸", min = 8, max = 1024 },
         { name = "angle", type = "number", default = 0, label = "当前角度", min = 0, max = 360 },
         { name = "open_angle", type = "number", default = 90, label = "开启角度", min = 0, max = 360 },
         { name = "close_angle", type = "number", default = 0, label = "关闭角度", min = 0, max = 360 },
         { name = "handle_color", type = "color", default = "#FF5722", label = "把手颜色" },
-        { name = "design_mode", type = "boolean", default = true, label = "设计模式" },
     },
     events = { "angle_changed", "toggled" },
 }
@@ -34,16 +33,6 @@ function Valve.close_all()
     for _, v in pairs(Valve.instances) do
         v:close()
     end
-end
-
--- 颜色转换：允许编辑器传入 #RRGGBB 或 hex number
-local function parse_color(c)
-    if type(c) == "string" and c:match("^#%x%x%x%x%x%x$") then
-        return tonumber(c:sub(2), 16)
-    elseif type(c) == "number" then
-        return c
-    end
-    return 0xFF5722
 end
 
 -- 构造函数：new(parent, props_or_state)
@@ -82,7 +71,7 @@ function Valve.new(parent, props)
 
     -- handle
     self.handle = lv.obj_create(self.container)
-    local h_w = math.floor(self.props.size * 0.8)
+    local h_w = math.floor(self.props.size)
     local h_h = math.floor(self.props.size * 0.2)
     self.handle:set_size(h_w, h_h)
     self.handle:center()
@@ -93,6 +82,15 @@ function Valve.new(parent, props)
         self.handle:set_style_transform_pivot_y(h_h / 2, 0)
     end
 
+    -- 颜色转换：允许编辑器传入 #RRGGBB 或 hex number
+    local function parse_color(c)
+        if type(c) == "string" and c:match("^#%x%x%x%x%x%x$") then
+            return tonumber(c:sub(2), 16)
+        elseif type(c) == "number" then
+            return c
+        end
+        return 0xFF5722
+    end
     self.handle:set_style_bg_color(parse_color(self.props.handle_color), 0)
     self.handle:set_style_radius(4, 0)
     self.handle:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
@@ -106,6 +104,22 @@ function Valve.new(parent, props)
 
     -- 事件监听
     self._event_listeners = { angle_changed = {}, toggled = {} }
+    
+    -- 点击事件处理：弹出确认框
+    local function on_click(e)
+        self:show_confirm_dialog()
+    end
+    
+    -- 注册点击事件
+    -- 注意：这里假设 lv.obj_add_event_cb 可用，或者使用 button.lua 中的封装方式
+    -- 直接使用 lv.obj_add_event_cb
+    if lv.obj_add_event_cb then
+        -- 创建一个简单的回调包装器
+        -- 由于 Lua 绑定限制，这里可能需要一个全局或静态的回调机制，
+        -- 但目前的 lv_lua.c 实现似乎支持直接传递 Lua 函数作为回调 (l_obj_add_event_cb)
+        -- 让我们尝试直接传递
+        self.container:add_event_cb(on_click, lv.EVENT_CLICKED, nil)
+    end
 
     -- 实例方法：属性接口
     function self.get_property(_, name)
@@ -119,7 +133,7 @@ function Valve.new(parent, props)
         elseif name == "size" then
             local s = math.floor(value)
             self.container:set_size(s, s)
-            local h_w = math.floor(s * 0.8)
+            local h_w = math.floor(s * 0.7)
             local h_h = math.floor(s * 0.2)
             self.handle:set_size(h_w, h_h)
             self.pivot:set_size(math.floor(s * 0.15), math.floor(s * 0.15))
@@ -178,7 +192,6 @@ function Valve.new(parent, props)
     
     -- 开启阀门
     function self.open(self)
-        if self.props.design_mode then return end
         self:set_angle(self.props.open_angle)
         self.is_open = true
         -- notify
@@ -187,7 +200,6 @@ function Valve.new(parent, props)
     
     -- 关闭阀门
     function self.close(self)
-        if self.props.design_mode then return end
         self:set_angle(self.props.close_angle)
         self.is_open = false
         -- notify
@@ -196,7 +208,6 @@ function Valve.new(parent, props)
     
     -- 切换状态
     function self.toggle(self)
-        if self.props.design_mode then return end
         if self.is_open then
             self:close()
         else
@@ -204,10 +215,8 @@ function Valve.new(parent, props)
         end
     end
     
-    -- 显示确认对话框（设计模式下不显示）
+    -- 显示确认对话框
     function self.show_confirm_dialog(self)
-        if self.props.design_mode then return end
-        
         local scr = lv.scr_act()
         
         -- 创建模态遮罩

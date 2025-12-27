@@ -42,6 +42,21 @@ namespace LVGLSharp.Runtime.Windows
         public static lv_group_t* key_inputGroup { get; set; }
         public static delegate* unmanaged[Cdecl]<lv_event_t*, void> SendTextAreaFocusCb { get; set; } = &HandleSendTextAreaFocusCb;
 
+        /// <summary>
+        /// 当前鼠标X坐标
+        /// </summary>
+        public static int MouseX => mouseX;
+
+        /// <summary>
+        /// 当前鼠标Y坐标
+        /// </summary>
+        public static int MouseY => mouseY;
+
+        /// <summary>
+        /// 鼠标是否按下
+        /// </summary>
+        public static bool MousePressed => mousePressed;
+
         static BITMAPINFO _bmi = new BITMAPINFO
         {
             bmiHeader = new BITMAPINFOHEADER
