@@ -374,7 +374,8 @@ namespace LVGLSharp.Runtime.Windows
 
             _fallbackFont = lv_obj_get_style_text_font(root, LV_PART_MAIN);
 
-            _fontManager = new SixLaborsFontManager(SystemFonts.Get("Microsoft YaHei"), 12, GetDPI(), _fallbackFont, [
+            // 使用 SimHei（黑体）字体
+            _fontManager = new SixLaborsFontManager(SystemFonts.Get("SimHei"), 12, GetDPI(), _fallbackFont, [
                 61441, 61448, 61451, 61452, 61453, 61457, 61459, 61461, 61465, 61468,
                 61473, 61478, 61479, 61480, 61502, 61507, 61512, 61515, 61516, 61517,
                 61521, 61522, 61523, 61524, 61543, 61544, 61550, 61552, 61553, 61556,
