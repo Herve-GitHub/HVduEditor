@@ -46,6 +46,8 @@ function CanvasArea.new(parent, props)
         start_widget_y = 0,
         start_mouse_x = 0,
         start_mouse_y = 0,
+        last_x = 0,
+        last_y = 0,
     }
     
     -- 事件监听器
@@ -135,11 +137,17 @@ end
 -- 对齐到网格
 function CanvasArea:snap_position(x, y)
     if not self.props.snap_to_grid then
-        return x, y
+        return math.floor(x), math.floor(y)
     end
     local grid = self.props.grid_size
+    -- 确保 x, y 是数字
+    x = x or 0
+    y = y or 0
     local snapped_x = math.floor((x + grid / 2) / grid) * grid
     local snapped_y = math.floor((y + grid / 2) / grid) * grid
+    -- 确保不为负数
+    snapped_x = math.max(0, snapped_x)
+    snapped_y = math.max(0, snapped_y)
     return snapped_x, snapped_y
 end
 
@@ -235,8 +243,9 @@ function CanvasArea:_setup_widget_drag_events(widget_entry)
         this:_on_widget_released(widget_entry)
     end, lv.EVENT_RELEASED, nil)
     
-    -- 点击事件 - 选中控件
+    -- 点击事件 - 选中控件（只在非拖拽时触发）
     main_obj:add_event_cb(function(e)
+        -- 短暂延迟检查，确保 released 事件已处理
         if not this._drag_state.is_dragging then
             this:select_widget(widget_entry)
         end
@@ -255,15 +264,21 @@ function CanvasArea:_on_widget_pressed(widget_entry)
     local mouse_x = lv.get_mouse_x()
     local mouse_y = lv.get_mouse_y()
     
+    -- 获取控件当前位置
+    local widget_x = main_obj:get_x()
+    local widget_y = main_obj:get_y()
+    
     -- 记录拖拽开始状态
     self._drag_state.is_dragging = false  -- 还没开始移动
     self._drag_state.widget_entry = widget_entry
-    self._drag_state.start_widget_x = main_obj:get_x()
-    self._drag_state.start_widget_y = main_obj:get_y()
+    self._drag_state.start_widget_x = widget_x
+    self._drag_state.start_widget_y = widget_y
     self._drag_state.start_mouse_x = mouse_x
     self._drag_state.start_mouse_y = mouse_y
+    self._drag_state.last_x = widget_x
+    self._drag_state.last_y = widget_y
     
-    print("[画布] 按下控件: " .. widget_entry.id .. " 鼠标: (" .. tostring(mouse_x) .. ", " .. tostring(mouse_y) .. ") 控件: (" .. main_obj:get_x() .. ", " .. main_obj:get_y() .. ")")
+    print("[画布] 按下控件: " .. widget_entry.id .. " 鼠标: (" .. tostring(mouse_x) .. ", " .. tostring(mouse_y) .. ") 控件: (" .. widget_x .. ", " .. widget_y .. ")")
 end
 
 -- 控件拖动事件
@@ -278,7 +293,7 @@ function CanvasArea:_on_widget_pressing(widget_entry)
     local current_mouse_x = lv.get_mouse_x()
     local current_mouse_y = lv.get_mouse_y()
     
-    -- 计算移动增量
+    -- 计算移动增量（相对于初始位置）
     local delta_x = current_mouse_x - self._drag_state.start_mouse_x
     local delta_y = current_mouse_y - self._drag_state.start_mouse_y
     
@@ -288,13 +303,13 @@ function CanvasArea:_on_widget_pressing(widget_entry)
             self._drag_state.is_dragging = true
             -- 选中正在拖拽的控件
             self:select_widget(widget_entry)
-            print("[画布] 开始拖拽: " .. widget_entry.id .. " delta: (" .. delta_x .. ", " .. delta_y .. ")")
+            print("[画布] 开始拖拽: " .. widget_entry.id)
         else
             return
         end
     end
     
-    -- 计算新位置
+    -- 计算新位置（基于初始控件位置 + 鼠标移动量）
     local new_x = self._drag_state.start_widget_x + delta_x
     local new_y = self._drag_state.start_widget_y + delta_y
     
@@ -304,12 +319,16 @@ function CanvasArea:_on_widget_pressing(widget_entry)
     new_x = math.max(0, math.min(new_x, self.props.width - w))
     new_y = math.max(0, math.min(new_y, self.props.height - h))
     
+    -- 记录最后位置
+    self._drag_state.last_x = new_x
+    self._drag_state.last_y = new_y
+    
     -- 移动控件
-    main_obj:set_pos(new_x, new_y)
+    main_obj:set_pos(math.floor(new_x), math.floor(new_y))
     
     -- 更新选择框位置
     if self._selection_box and self._selected_widget == widget_entry then
-        self._selection_box:set_pos(new_x - 2, new_y - 2)
+        self._selection_box:set_pos(math.floor(new_x) - 2, math.floor(new_y) - 2)
     end
 end
 
@@ -317,16 +336,25 @@ end
 function CanvasArea:_on_widget_released(widget_entry)
     if self._drag_state.widget_entry ~= widget_entry then return end
     
+    local was_dragging = self._drag_state.is_dragging
     local instance = widget_entry.instance
     local main_obj = instance.btn or instance.container or instance.obj or instance.chart
     
-    if self._drag_state.is_dragging and main_obj then
-        -- 对齐到网格
-        local current_x = main_obj:get_x()
-        local current_y = main_obj:get_y()
-        local snapped_x, snapped_y = self:snap_position(current_x, current_y)
+    if was_dragging and main_obj then
+        -- 使用记录的最后位置进行网格对齐
+        local final_x = self._drag_state.last_x
+        local final_y = self._drag_state.last_y
         
-        -- 设置对齐后的位置
+        -- 对齐到网格
+        local snapped_x, snapped_y = self:snap_position(final_x, final_y)
+        
+        -- 限制在画布范围内
+        local w = main_obj:get_width()
+        local h = main_obj:get_height()
+        snapped_x = math.max(0, math.min(snapped_x, self.props.width - w))
+        snapped_y = math.max(0, math.min(snapped_y, self.props.height - h))
+        
+        -- 设置最终位置
         main_obj:set_pos(snapped_x, snapped_y)
         
         -- 更新控件属性
@@ -342,7 +370,7 @@ function CanvasArea:_on_widget_released(widget_entry)
             self._selection_box:set_pos(snapped_x - 2, snapped_y - 2)
         end
         
-        print("[画布] 拖拽结束: " .. widget_entry.id .. " @ (" .. snapped_x .. ", " .. snapped_y .. ")")
+        print("[画布] 拖拽结束: " .. widget_entry.id .. " 最终位置: (" .. snapped_x .. ", " .. snapped_y .. ")")
         self:_emit("widget_moved", widget_entry)
     end
     
