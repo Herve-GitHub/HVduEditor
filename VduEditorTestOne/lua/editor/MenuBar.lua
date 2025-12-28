@@ -92,6 +92,20 @@ function MenuBar.new(parent, props)
         hover_color = props.hover_color or 0x3D3D3D,
     }
     
+    -- 动态菜单项标签（用于切换显示）
+    self._dynamic_labels = {
+        show_grid = { on = "隐藏网格", off = "显示网格" },
+        snap_to_grid = { on = "取消对齐到网格", off = "对齐到网格" },
+        show_toolbox = { on = "隐藏工具箱", off = "显示工具箱" },
+    }
+    
+    -- 动态状态
+    self._states = {
+        show_grid = true,       -- 默认显示网格
+        snap_to_grid = true,    -- 默认对齐到网格
+        show_toolbox = true,    -- 默认显示工具箱
+    }
+    
     -- 事件监听器
     self._event_listeners = {}
     
@@ -192,6 +206,16 @@ function MenuBar:_create_menu_button(menu_key, label, x_offset)
     return { btn = btn, label = lbl, width = btn_width, x = x_offset }
 end
 
+-- 获取菜单项的显示标签（支持动态标签）
+function MenuBar:_get_item_label(item_id, default_label)
+    local dynamic = self._dynamic_labels[item_id]
+    if dynamic then
+        local state = self._states[item_id]
+        return state and dynamic.on or dynamic.off
+    end
+    return default_label
+end
+
 -- 切换下拉菜单显示
 function MenuBar:_toggle_dropdown(menu_key, btn)
     print("[MenuBar] _toggle_dropdown called: " .. menu_key)
@@ -285,9 +309,12 @@ function MenuBar:_toggle_dropdown(menu_key, btn)
             item_btn:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
             item_btn:clear_layout()
             
+            -- 获取动态标签
+            local display_label = self:_get_item_label(item.id, item.label)
+            
             -- 标签
             local item_lbl = lv.label_create(item_btn)
-            item_lbl:set_text(item.label)
+            item_lbl:set_text(display_label)
             item_lbl:set_style_text_color(0xFFFFFF, 0)
             item_lbl:align(lv.ALIGN_LEFT_MID, 10, 0)
             
@@ -313,6 +340,29 @@ function MenuBar:_toggle_dropdown(menu_key, btn)
     end
     
     print("[MenuBar] 下拉菜单创建完成，项目数: " .. #menu_def.items)
+end
+
+-- 设置状态（用于更新动态菜单项）
+function MenuBar:set_state(state_key, value)
+    if self._states[state_key] ~= nil then
+        self._states[state_key] = value
+        print("[MenuBar] 状态更新: " .. state_key .. " = " .. tostring(value))
+    end
+end
+
+-- 获取状态
+function MenuBar:get_state(state_key)
+    return self._states[state_key]
+end
+
+-- 切换状态
+function MenuBar:toggle_state(state_key)
+    if self._states[state_key] ~= nil then
+        self._states[state_key] = not self._states[state_key]
+        print("[MenuBar] 状态切换: " .. state_key .. " = " .. tostring(self._states[state_key]))
+        return self._states[state_key]
+    end
+    return nil
 end
 
 -- 获取容器

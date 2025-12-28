@@ -56,8 +56,25 @@ local canvas = CanvasArea.new(scr, {
 local toolbox = ToolsBox.new(scr, {
     x = 10,
     y = MENUBAR_HEIGHT + 10,
-    width = 180,
+    width = 130,
 })
+
+-- 同步菜单栏状态与画布/工具箱状态
+menu_bar:set_state("show_grid", canvas:is_grid_visible())
+menu_bar:set_state("snap_to_grid", canvas:is_snap_to_grid())
+menu_bar:set_state("show_toolbox", toolbox:is_visible())
+
+-- 状态栏标签引用（后面会创建）
+local status_label = nil
+
+-- 更新状态栏
+local function update_status_bar()
+    if status_label then
+        local grid_status = canvas:is_grid_visible() and "显示" or "隐藏"
+        local snap_status = canvas:is_snap_to_grid() and "开启" or "关闭"
+        status_label:set_text("就绪 | 网格: " .. grid_status .. " | 对齐: " .. snap_status .. " | 网格大小: " .. canvas.props.grid_size .. "px")
+    end
+end
 
 -- 菜单事件处理
 menu_bar:on("menu_action", function(self, menu_key, item_id)
@@ -87,10 +104,21 @@ menu_bar:on("menu_action", function(self, menu_key, item_id)
     elseif item_id == "align_bottom" then
         canvas:align_selected("bottom")
     elseif item_id == "show_grid" then
-        print("切换网格显示")
+        -- 切换网格显示
+        local new_state = canvas:toggle_grid()
+        menu_bar:set_state("show_grid", new_state)
+        print("网格显示: " .. tostring(new_state))
+        update_status_bar()
+    elseif item_id == "snap_to_grid" then
+        -- 切换对齐到网格
+        local new_state = canvas:toggle_snap_to_grid()
+        menu_bar:set_state("snap_to_grid", new_state)
+        print("对齐到网格: " .. tostring(new_state))
+        update_status_bar()
     elseif item_id == "show_toolbox" then
         -- 切换工具箱显示/隐藏
         toolbox:toggle()
+        menu_bar:set_state("show_toolbox", toolbox:is_visible())
     elseif item_id == "exit" then
         print("退出编辑器")
     end
@@ -113,18 +141,53 @@ canvas:on("widget_deleted", function(self, widget_entry)
     print("[画布] 删除控件: " .. widget_entry.id)
 end)
 
--- 工具箱事件处理
-toolbox:on("tool_dropped", function(self, tool, module, x, y)
-    print("[工具箱] 放置工具: " .. tool.name .. " @ (" .. x .. ", " .. y .. ")")
+-- 工具箱拖放事件处理（新的拖拽方式）
+toolbox:on("tool_drag_drop", function(self, tool, module, screen_x, screen_y)
+    print("[工具箱] 拖放工具: " .. tool.name .. " 屏幕坐标: (" .. screen_x .. ", " .. screen_y .. ")")
     
-    local widget = canvas:handle_drop(module, x, y)
+    -- 将屏幕坐标转换为画布坐标
+    local canvas_x = screen_x - canvas.props.x
+    local canvas_y = screen_y - canvas.props.y
+    
+    print("[工具箱] 画布坐标: (" .. canvas_x .. ", " .. canvas_y .. ")")
+    
+    -- 检查是否在画布范围内
+    if canvas_x >= 0 and canvas_x < canvas.props.width and
+       canvas_y >= 0 and canvas_y < canvas.props.height then
+        -- 在画布内，创建控件
+        local widget = canvas:handle_drop(module, canvas_x, canvas_y)
+        if widget then
+            print("[工具箱] 控件创建成功: " .. widget.id)
+            -- 自动选中新创建的控件
+            canvas:select_widget(widget)
+        end
+    else
+        print("[工具箱] 释放位置不在画布范围内，取消创建")
+    end
+end)
+
+-- 兼容旧的点击放置方式
+toolbox:on("tool_dropped", function(self, tool, module, x, y)
+    print("[工具箱] 点击放置工具: " .. tool.name)
+    
+    -- 默认放置位置（画布中心附近）
+    local default_x = 200
+    local default_y = 150
+    
+    local widget = canvas:handle_drop(module, default_x, default_y)
     if widget then
         print("[工具箱] 控件创建成功: " .. widget.id)
+        canvas:select_widget(widget)
     end
 end)
 
 toolbox:on("visibility_changed", function(self, visible)
     print("[工具箱] 可见性变化: " .. tostring(visible))
+    menu_bar:set_state("show_toolbox", visible)
+end)
+
+toolbox:on("collapse_changed", function(self, collapsed)
+    print("[工具箱] 折叠状态: " .. tostring(collapsed))
 end)
 
 -- ========== 状态栏 ==========
@@ -138,12 +201,15 @@ status_bar:set_style_pad_all(0, 0)
 status_bar:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
 status_bar:clear_layout()
 
-local status_label = lv.label_create(status_bar)
-status_label:set_text("就绪 | 画布: " .. WINDOW_WIDTH .. "x" .. (WINDOW_HEIGHT - MENUBAR_HEIGHT - STATUSBAR_HEIGHT) .. " | 网格: 20px")
+status_label = lv.label_create(status_bar)
 status_label:set_style_text_color(0xFFFFFF, 0)
 status_label:align(lv.ALIGN_LEFT_MID, 10, 0)
+
+-- 初始化状态栏
+update_status_bar()
 
 print("=== 编辑器初始化完成 ===")
 print("菜单栏高度: " .. menu_bar:get_height())
 print("画布区域: 全屏 (" .. WINDOW_WIDTH .. "x" .. (WINDOW_HEIGHT - MENUBAR_HEIGHT - STATUSBAR_HEIGHT) .. ")")
 print("工具箱: 浮动在画布左上角")
+print("提示: 从工具箱拖拽控件到画布上释放即可创建")

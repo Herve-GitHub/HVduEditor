@@ -319,16 +319,20 @@ function CanvasArea:_on_widget_pressing(widget_entry)
     new_x = math.max(0, math.min(new_x, self.props.width - w))
     new_y = math.max(0, math.min(new_y, self.props.height - h))
     
+    -- 取整
+    new_x = math.floor(new_x)
+    new_y = math.floor(new_y)
+    
     -- 记录最后位置
     self._drag_state.last_x = new_x
     self._drag_state.last_y = new_y
     
     -- 移动控件
-    main_obj:set_pos(math.floor(new_x), math.floor(new_y))
+    main_obj:set_pos(new_x, new_y)
     
     -- 更新选择框位置
     if self._selection_box and self._selected_widget == widget_entry then
-        self._selection_box:set_pos(math.floor(new_x) - 2, math.floor(new_y) - 2)
+        self._selection_box:set_pos(new_x - 2, new_y - 2)
     end
 end
 
@@ -365,9 +369,9 @@ function CanvasArea:_on_widget_released(widget_entry)
         widget_entry.props.x = snapped_x
         widget_entry.props.y = snapped_y
         
-        -- 更新选择框
-        if self._selection_box and self._selected_widget == widget_entry then
-            self._selection_box:set_pos(snapped_x - 2, snapped_y - 2)
+        -- 更新选择框 - 重新创建以确保位置正确
+        if self._selected_widget == widget_entry then
+            self:_update_selection_box(widget_entry)
         end
         
         print("[画布] 拖拽结束: " .. widget_entry.id .. " 最终位置: (" .. snapped_x .. ", " .. snapped_y .. ")")
@@ -377,6 +381,41 @@ function CanvasArea:_on_widget_released(widget_entry)
     -- 重置拖拽状态
     self._drag_state.is_dragging = false
     self._drag_state.widget_entry = nil
+end
+
+-- 更新选择框位置
+function CanvasArea:_update_selection_box(widget_entry)
+    if not self._selection_box then return end
+    
+    local instance = widget_entry.instance
+    local main_obj = instance.btn or instance.container or instance.obj or instance.chart
+    if not main_obj then return end
+    
+    local x = main_obj:get_x()
+    local y = main_obj:get_y()
+    local w = main_obj:get_width()
+    local h = main_obj:get_height()
+    
+    -- 更新选择框位置和大小
+    self._selection_box:set_pos(x - 2, y - 2)
+    self._selection_box:set_size(w + 4, h + 4)
+    
+    -- 更新四个角的手柄位置
+    local handle_size = 8
+    local handle_positions = {
+        { x = -handle_size/2, y = -handle_size/2 },
+        { x = w - handle_size/2, y = -handle_size/2 },
+        { x = -handle_size/2, y = h - handle_size/2 },
+        { x = w - handle_size/2, y = h - handle_size/2 },
+    }
+    
+    local child_count = self._selection_box:get_child_count()
+    for i = 0, child_count - 1 do
+        local handle = self._selection_box:get_child(i)
+        if handle and handle_positions[i + 1] then
+            handle:set_pos(handle_positions[i + 1].x, handle_positions[i + 1].y)
+        end
+    end
 end
 
 -- 生成唯一ID
@@ -533,6 +572,71 @@ function CanvasArea:clear()
     self:deselect()
     
     self:_emit("canvas_cleared")
+end
+
+-- 切换网格显示
+function CanvasArea:toggle_grid()
+    self.props.show_grid = not self.props.show_grid
+    self:_refresh_grid()
+    return self.props.show_grid
+end
+
+-- 设置网格显示状态
+function CanvasArea:set_show_grid(show)
+    if self.props.show_grid ~= show then
+        self.props.show_grid = show
+        self:_refresh_grid()
+    end
+end
+
+-- 获取网格显示状态
+function CanvasArea:is_grid_visible()
+    return self.props.show_grid
+end
+
+-- 切换对齐到网格
+function CanvasArea:toggle_snap_to_grid()
+    self.props.snap_to_grid = not self.props.snap_to_grid
+    return self.props.snap_to_grid
+end
+
+-- 设置对齐到网格状态
+function CanvasArea:set_snap_to_grid(snap)
+    self.props.snap_to_grid = snap
+end
+
+-- 获取对齐到网格状态
+function CanvasArea:is_snap_to_grid()
+    return self.props.snap_to_grid
+end
+
+-- 刷新网格显示
+function CanvasArea:_refresh_grid()
+    -- 删除现有网格线（网格线是没有 CLICKABLE 标志的子元素）
+    local children_to_delete = {}
+    local child_count = self.container:get_child_count()
+    
+    for i = 0, child_count - 1 do
+        local child = self.container:get_child(i)
+        if child then
+            -- 检查是否是网格线（宽度为1或高度为1，且不可点击）
+            local w = child:get_width()
+            local h = child:get_height()
+            if (w == 1 or h == 1) and not child:has_flag(lv.OBJ_FLAG_CLICKABLE) then
+                table.insert(children_to_delete, child)
+            end
+        end
+    end
+    
+    -- 删除网格线
+    for _, child in ipairs(children_to_delete) do
+        child:delete()
+    end
+    
+    -- 如果需要显示网格，重新绘制
+    if self.props.show_grid then
+        self:_draw_grid()
+    end
 end
 
 -- 从工具箱接收放置
