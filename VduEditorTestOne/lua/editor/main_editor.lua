@@ -133,12 +133,27 @@ canvas:on("widget_selected", function(self, widget_entry)
     print("[画布] 选中控件: " .. widget_entry.id)
 end)
 
+canvas:on("widgets_selected", function(self, widget_entries)
+    print("[画布] 多选控件: " .. #widget_entries .. " 个")
+    for _, w in ipairs(widget_entries) do
+        print("  - " .. w.id)
+    end
+end)
+
 canvas:on("widget_deselected", function(self, prev_widget)
     print("[画布] 取消选中")
 end)
 
 canvas:on("widget_deleted", function(self, widget_entry)
     print("[画布] 删除控件: " .. widget_entry.id)
+end)
+
+canvas:on("widget_moved", function(self, widget_entry)
+    print("[画布] 控件移动: " .. widget_entry.id)
+end)
+
+canvas:on("widgets_moved", function(self, widget_entries)
+    print("[画布] 多个控件移动: " .. #widget_entries .. " 个")
 end)
 
 -- 工具箱拖放事件处理（新的拖拽方式）
