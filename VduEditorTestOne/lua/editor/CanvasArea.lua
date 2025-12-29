@@ -64,6 +64,7 @@ function CanvasArea.new(parent, props)
     -- 框选状态
     self._marquee_state = {
         is_selecting = false,
+        was_selecting = false,  -- 新增：记录是否刚刚完成框选
         start_x = 0,
         start_y = 0,
         current_x = 0,
@@ -112,7 +113,13 @@ function CanvasArea.new(parent, props)
     
     -- 点击事件 - 取消选中（非框选时）
     self.container:add_event_cb(function(e)
-        if not this._marquee_state.is_selecting and not this._drag_state.is_dragging then
+        -- 如果刚刚完成框选，不要取消选中
+        if this._marquee_state.was_selecting then
+            this._marquee_state.was_selecting = false
+            return
+        end
+        -- 只有当不是拖拽操作时才取消选中
+        if not this._drag_state.is_dragging then
             this:deselect_all()
         end
     end, lv.EVENT_CLICKED, nil)
@@ -182,8 +189,74 @@ end
 
 function CanvasArea:_on_canvas_released()
     if self._marquee_state.is_selecting then
-        self:_select_widgets_in_marquee()
+        -- 标记刚刚完成框选
+        self._marquee_state.was_selecting = true
+        
+        -- 获取框选区域
+        local x1 = math.min(self._marquee_state.start_x, self._marquee_state.current_x)
+        local y1 = math.min(self._marquee_state.start_y, self._marquee_state.current_y)
+        local x2 = math.max(self._marquee_state.start_x, self._marquee_state.current_x)
+        local y2 = math.max(self._marquee_state.start_y, self._marquee_state.current_y)
+        
+        print("[画布] 框选区域: (" .. x1 .. "," .. y1 .. ") - (" .. x2 .. "," .. y2 .. ")")
+        print("[画布] 控件数量: " .. #self._widgets)
+        
+        -- 查找框选区域内的控件
+        local selected = {}
+        for _, widget_entry in ipairs(self._widgets) do
+            local instance = widget_entry.instance
+            local main_obj = instance.btn or instance.container or instance.obj or instance.chart
+            if main_obj then
+                local wx = main_obj:get_x()
+                local wy = main_obj:get_y()
+                local ww = main_obj:get_width()
+                local wh = main_obj:get_height()
+                
+                print("[画布] 检查控件: " .. widget_entry.id .. " 位置: (" .. wx .. "," .. wy .. ") 尺寸: (" .. ww .. "x" .. wh .. ")")
+                
+                -- 检查是否相交
+                if wx < x2 and wx + ww > x1 and wy < y2 and wy + wh > y1 then
+                    print("[画布] 控件在框选区域内: " .. widget_entry.id)
+                    table.insert(selected, widget_entry)
+                end
+            end
+        end
+        
+        -- 删除框选矩形
         self:_delete_marquee_box()
+        
+        -- 选中找到的控件
+        if #selected > 0 then
+            print("[画布] 框选完成，选中 " .. #selected .. " 个控件")
+            -- 清除旧的选择状态
+            self._selected_widgets = {}
+            for i = #self._selection_boxes, 1, -1 do
+                local box = self._selection_boxes[i]
+                if box then
+                    pcall(function() box:delete() end)
+                end
+            end
+            self._selection_boxes = {}
+            self._box_widget_map = {}
+            
+            -- 设置新的选中状态
+            self._selected_widgets = selected
+            
+            for _, w in ipairs(selected) do
+                self:_create_selection_box(w)
+            end
+            
+            if #selected == 1 then
+                self:_emit("widget_selected", selected[1])
+            else
+                self:_emit("widgets_selected", selected)
+            end
+        else
+            print("[画布] 框选完成，未选中任何控件")
+        end
+    else
+        -- 不是框选，清除标志
+        self._marquee_state.was_selecting = false
     end
     self._marquee_state.is_selecting = false
 end
@@ -226,34 +299,6 @@ function CanvasArea:_delete_marquee_box()
     if self._marquee_state.marquee_box then
         self._marquee_state.marquee_box:delete()
         self._marquee_state.marquee_box = nil
-    end
-end
-
-function CanvasArea:_select_widgets_in_marquee()
-    local x1 = math.min(self._marquee_state.start_x, self._marquee_state.current_x)
-    local y1 = math.min(self._marquee_state.start_y, self._marquee_state.current_y)
-    local x2 = math.max(self._marquee_state.start_x, self._marquee_state.current_x)
-    local y2 = math.max(self._marquee_state.start_y, self._marquee_state.current_y)
-    
-    local selected = {}
-    
-    for _, widget_entry in ipairs(self._widgets) do
-        local instance = widget_entry.instance
-        local main_obj = instance.btn or instance.container or instance.obj or instance.chart
-        if main_obj then
-            local wx = main_obj:get_x()
-            local wy = main_obj:get_y()
-            local ww = main_obj:get_width()
-            local wh = main_obj:get_height()
-            
-            if wx < x2 and wx + ww > x1 and wy < y2 and wy + wh > y1 then
-                table.insert(selected, widget_entry)
-            end
-        end
-    end
-    
-    if #selected > 0 then
-        self:select_widgets(selected)
     end
 end
 
@@ -571,7 +616,8 @@ function CanvasArea:select_widget(widget_entry)
     self:_emit("widget_selected", widget_entry)
 end
 
-function CanvasArea:select_widgets(widget_entries)
+function CanvasArea:select_widgets(widget_entries
+)
     self:deselect_all()
     self._selected_widgets = widget_entries
     
