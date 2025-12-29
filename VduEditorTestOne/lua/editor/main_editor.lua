@@ -59,10 +59,20 @@ local toolbox = ToolsBox.new(scr, {
     width = 130,
 })
 
--- 同步菜单栏状态与画布/工具箱状态
+-- 创建属性窗口
+local PropertyArea = require("PropertyArea")
+local property_area = PropertyArea.new(scr, {
+    x = 820,
+    y = MENUBAR_HEIGHT + 10,
+    width = 200,
+    visible = false,
+})
+
+-- 同步菜单栏状态与画布/工具箱/属性窗口状态
 menu_bar:set_state("show_grid", canvas:is_grid_visible())
 menu_bar:set_state("snap_to_grid", canvas:is_snap_to_grid())
 menu_bar:set_state("show_toolbox", toolbox:is_visible())
+menu_bar:set_state("show_properties", property_area:is_visible())
 
 -- 状态栏标签引用（后面会创建）
 local status_label = nil
@@ -119,6 +129,10 @@ menu_bar:on("menu_action", function(self, menu_key, item_id)
         -- 切换工具箱显示/隐藏
         toolbox:toggle()
         menu_bar:set_state("show_toolbox", toolbox:is_visible())
+    elseif item_id == "show_properties" then
+        -- 切换属性窗口显示/隐藏
+        property_area:toggle()
+        menu_bar:set_state("show_properties", property_area:is_visible())
     elseif item_id == "exit" then
         print("退出编辑器")
     end
@@ -131,6 +145,19 @@ end)
 
 canvas:on("widget_selected", function(self, widget_entry)
     print("[画布] 选中控件: " .. widget_entry.id)
+    -- 获取所选控件的实例并调用其 get_properties，如果存在
+    local inst = widget_entry.instance
+    if inst and inst.get_properties then
+        local ok, props = pcall(function() return inst:get_properties() end)
+        if ok and props then
+            property_area:show()
+            property_area:set_properties(props)
+        else
+            print("[属性窗口] 获取属性失败: " .. tostring(props))
+        end
+    else
+        print("[属性窗口] 选中控件没有 get_properties 方法")
+    end
 end)
 
 canvas:on("widgets_selected", function(self, widget_entries)
@@ -196,13 +223,15 @@ toolbox:on("tool_dropped", function(self, tool, module, x, y)
     end
 end)
 
+-- 工具箱/属性窗口状态同步
 toolbox:on("visibility_changed", function(self, visible)
     print("[工具箱] 可见性变化: " .. tostring(visible))
     menu_bar:set_state("show_toolbox", visible)
 end)
 
-toolbox:on("collapse_changed", function(self, collapsed)
-    print("[工具箱] 折叠状态: " .. tostring(collapsed))
+property_area:on("visibility_changed", function(self, visible)
+    print("[属性窗口] 可见性变化: " .. tostring(visible))
+    menu_bar:set_state("show_properties", visible)
 end)
 
 -- ========== 状态栏 ==========

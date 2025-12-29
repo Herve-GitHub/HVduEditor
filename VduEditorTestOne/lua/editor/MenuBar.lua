@@ -97,6 +97,7 @@ function MenuBar.new(parent, props)
         show_grid = { on = "隐藏网格", off = "显示网格" },
         snap_to_grid = { on = "取消对齐到网格", off = "对齐到网格" },
         show_toolbox = { on = "隐藏工具箱", off = "显示工具箱" },
+        show_properties = { on = "隐藏属性窗口", off = "属性窗口" },
     }
     
     -- 动态状态
@@ -104,6 +105,7 @@ function MenuBar.new(parent, props)
         show_grid = true,       -- 默认显示网格
         snap_to_grid = true,    -- 默认对齐到网格
         show_toolbox = true,    -- 默认显示工具箱
+        show_properties = false, -- 默认属性窗口隐藏
     }
     
     -- 事件监听器

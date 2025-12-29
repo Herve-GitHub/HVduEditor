@@ -4,6 +4,7 @@ using LVGLSharp.Runtime.Windows;
 using NLua;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Concurrent;
 
 namespace VduEditorTestOne
 {
@@ -14,6 +15,10 @@ namespace VduEditorTestOne
         static List<EventCallbackData> _eventCallbacks = new();
         static List<TimerCallbackData> _timerCallbacks = new();
         static lv_style_t* defaultFontStyle = null;
+        
+        // 用于延迟处理事件的队列
+        static ConcurrentQueue<Action> _pendingActions = new();
+        
         static void Main(string[] args)
         {
             // 设置控制台输出编码为UTF-8，解决中文乱码问题
@@ -67,11 +72,32 @@ namespace VduEditorTestOne
                 Console.WriteLine($"Lua Error: {ex.Message}");
             }
 
-            // Start the main loop
-            _window.StartLoop(() => { });
+            // Start the main loop - 处理延迟事件
+            _window.StartLoop(() => 
+            { 
+                ProcessPendingActions();
+            });
 
             // Cleanup
             _lua.Dispose();
+        }
+        
+        /// <summary>
+        /// 在主循环中安全地处理延迟的事件回调
+        /// </summary>
+        static void ProcessPendingActions()
+        {
+            while (_pendingActions.TryDequeue(out var action))
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing pending action: {ex.Message}");
+                }
+            }
         }
 
         static void RegisterLvglModule(Lua lua)
@@ -219,6 +245,16 @@ namespace VduEditorTestOne
             return new LvChartWrapper(chart);
         }
 
+
+
+
+
+
+
+
+
+
+
         public static LvObjWrapper LuaSliderCreate(LvObjWrapper parent)
         {
             lv_obj_t* slider = lv_slider_create(parent.Ptr);
@@ -303,14 +339,21 @@ namespace VduEditorTestOne
             GCHandle handle = GCHandle.FromIntPtr((IntPtr)userData);
             if (handle.Target is TimerCallbackData data)
             {
-                try
+                // 将回调延迟到主循环中执行，记录日志以便排查阻塞
+                var cb = data.Callback;
+                _pendingActions.Enqueue(() =>
                 {
-                    data.Callback.Call();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Lua timer callback error: {ex.Message}");
-                }
+                    Console.WriteLine($"[PendingAction][Timer] Start callback: {cb}");
+                    try
+                    {
+                        cb.Call();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Lua timer callback error: {ex.Message}");
+                    }
+                    Console.WriteLine($"[PendingAction][Timer] End callback: {cb}");
+                });
             }
         }
 
@@ -339,14 +382,28 @@ namespace VduEditorTestOne
             GCHandle handle = GCHandle.FromIntPtr((IntPtr)userData);
             if (handle.Target is EventCallbackData data)
             {
-                try
+                // 捕获事件数据，延迟到主循环中安全执行
+                int eventCode = (int)lv_event_get_code(e);
+                IntPtr targetPtr = (IntPtr)lv_event_get_target(e);
+
+                // Capture callback reference to avoid closure over 'data' which may be GC'd
+                var cb = data.Callback;
+                var user = data.UserData;
+
+                // Enqueue an action that logs start/end and invokes the Lua callback
+                _pendingActions.Enqueue(() =>
                 {
-                    data.Callback.Call(new LvEventWrapper(e));
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Lua event callback error: {ex.Message}");
-                }
+                    Console.WriteLine($"[PendingAction][Event] Start - event:{eventCode} target:{targetPtr} callback:{cb}");
+                    try
+                    {
+                        cb.Call(new LvEventData(eventCode, targetPtr));
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Lua event callback error: {ex.Message}");
+                    }
+                    Console.WriteLine($"[PendingAction][Event] End - event:{eventCode} callback:{cb}");
+                });
             }
         }
 
@@ -361,6 +418,31 @@ namespace VduEditorTestOne
         {
             public LuaFunction Callback { get; set; } = null!;
             public lv_timer_t* Timer { get; set; }
+        }
+    }
+
+    /// <summary>
+    /// 延迟事件数据（用于在主循环中安全传递事件信息）
+    /// </summary>
+    public unsafe class LvEventData
+    {
+        private readonly int _eventCode;
+        private readonly IntPtr _targetPtr;
+
+        public LvEventData(int eventCode, IntPtr targetPtr)
+        {
+            _eventCode = eventCode;
+            _targetPtr = targetPtr;
+        }
+
+        public int get_code()
+        {
+            return _eventCode;
+        }
+
+        public LvObjWrapper get_target()
+        {
+            return new LvObjWrapper((lv_obj_t*)_targetPtr);
         }
     }
 
