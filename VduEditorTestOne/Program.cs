@@ -245,6 +245,16 @@ namespace VduEditorTestOne
             return new LvChartWrapper(chart);
         }
 
+
+
+
+
+
+
+
+
+
+
         public static LvObjWrapper LuaSliderCreate(LvObjWrapper parent)
         {
             lv_obj_t* slider = lv_slider_create(parent.Ptr);
