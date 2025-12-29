@@ -13,13 +13,14 @@ Button.__widget_meta = {
     { name = "label", type = "string", default = "OK", label = "文本" },
     { name = "x", type = "number", default = 0, label = "X" },
     { name = "y", type = "number", default = 0, label = "Y" },
-    { name = "width", type = "number", default = 120, label = "宽度" },
-    { name = "height", type = "number", default = 44, label = "高度" },
+    { name = "width", type = "number", default = 100, label = "宽度" },
+    { name = "height", type = "number", default = 40, label = "高度" },
     { name = "color", type = "color", default = "#ffffff", label = "文本颜色" },
     { name = "font_size", type = "number", default = 16, label = "字体大小" },
     { name = "alignment", type = "string", default = "center", label = "对齐方式" },
     { name = "bg_color", type = "color", default = "#007acc", label = "背景色" },
     { name = "enabled", type = "boolean", default = true, label = "启用" },
+    { name = "design_mode", type = "boolean", default = true, label = "设计模式" },
   },
   events = { "clicked", "single_clicked", "double_clicked" },
 }
@@ -47,10 +48,14 @@ function Button.new(parent, state)
   -- 事件订阅：统一接口 on(event_name, callback)
   -- callback(self, ...) 将在事件触发时被调用
   function self.on(self, event_name, callback)
+    -- 设计模式下不注册事件
+    if self.props.design_mode then return end
+    
     -- 定义通用的内部回调处理逻辑
     local function create_safe_callback()
       return function(e)
           if not self.props.enabled then return end
+          if self.props.design_mode then return end
           local ok, err = pcall(callback, self)
           if not ok then print("[button] callback error:", err) end
       end

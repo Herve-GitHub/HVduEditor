@@ -1,0 +1,530 @@
+﻿using LVGLSharp;
+using LVGLSharp.Interop;
+using LVGLSharp.Runtime.Windows;
+using NLua;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace VduEditor
+{
+    unsafe partial class Program
+    {
+        static Lua? _lua;
+        static List<string> widgets = new List<string>();
+        static List<EventCallbackData> _eventCallbacks = new();
+        static List<TimerCallbackData> _timerCallbacks = new();
+        /// <summary>
+        /// 初始化lua
+        /// </summary>
+        static void reglvglToLua()
+        {
+            // Initialize Lua with LVGL bindings
+            _lua = new Lua();
+            _lua.State.Encoding = Encoding.UTF8;
+            // Set up Lua package path for require
+            string curPath = AppDomain.CurrentDomain.BaseDirectory;
+            string scriptPath = System.IO.Path.Combine(curPath, "lua");
+            string scriptDir = Path.GetDirectoryName(Path.GetFullPath(scriptPath)) ?? ".";
+            string baseDir = Path.GetDirectoryName(scriptDir) ?? scriptDir;
+            _lua.DoString($@"
+                package.path = '{baseDir.Replace("\\", "/")}/?.lua;' .. package.path
+                package.path = '{scriptDir.Replace("\\", "/")}/?.lua;' .. package.path
+            ");
+            RegisterLvglModule(_lua);
+            //dofile
+        }
+        static void readLuaControls()
+        {
+            //读取lua/widgets中的元素
+            string curPath = AppDomain.CurrentDomain.BaseDirectory;
+            string widgetsPath = System.IO.Path.Combine(curPath, "lua", "widgets");
+            string[] luaFiles = System.IO.Directory.GetFiles(widgetsPath, "*.lua");
+            foreach (string luaFile in luaFiles)
+            {
+                // Run the Lua script
+                try
+                {
+                    _lua?.DoFile(luaFile);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Lua Error: {ex.Message}");
+                }
+            }
+        }
+        static void RegisterLvglModule(Lua lua)
+        {
+            // Create the lvgl module table
+            lua.NewTable("_lvgl_module");
+
+            // ========== EVENT constants ==========
+            lua["_lvgl_module.EVENT_CLICKED"] = (int)LV_EVENT_CLICKED;
+            lua["_lvgl_module.EVENT_SINGLE_CLICKED"] = (int)LV_EVENT_SINGLE_CLICKED;
+            lua["_lvgl_module.EVENT_DOUBLE_CLICKED"] = (int)LV_EVENT_DOUBLE_CLICKED;
+            lua["_lvgl_module.EVENT_PRESSED"] = (int)LV_EVENT_PRESSED;
+            lua["_lvgl_module.EVENT_RELEASED"] = (int)LV_EVENT_RELEASED;
+            lua["_lvgl_module.EVENT_LONG_PRESSED"] = (int)LV_EVENT_LONG_PRESSED;
+            lua["_lvgl_module.EVENT_VALUE_CHANGED"] = (int)LV_EVENT_VALUE_CHANGED;
+
+            // ========== ALIGN constants ==========
+            lua["_lvgl_module.ALIGN_DEFAULT"] = (int)LV_ALIGN_DEFAULT;
+            lua["_lvgl_module.ALIGN_TOP_LEFT"] = (int)LV_ALIGN_TOP_LEFT;
+            lua["_lvgl_module.ALIGN_TOP_MID"] = (int)LV_ALIGN_TOP_MID;
+            lua["_lvgl_module.ALIGN_TOP_RIGHT"] = (int)LV_ALIGN_TOP_RIGHT;
+            lua["_lvgl_module.ALIGN_BOTTOM_LEFT"] = (int)LV_ALIGN_BOTTOM_LEFT;
+            lua["_lvgl_module.ALIGN_BOTTOM_MID"] = (int)LV_ALIGN_BOTTOM_MID;
+            lua["_lvgl_module.ALIGN_BOTTOM_RIGHT"] = (int)LV_ALIGN_BOTTOM_RIGHT;
+            lua["_lvgl_module.ALIGN_LEFT_MID"] = (int)LV_ALIGN_LEFT_MID;
+            lua["_lvgl_module.ALIGN_RIGHT_MID"] = (int)LV_ALIGN_RIGHT_MID;
+            lua["_lvgl_module.ALIGN_CENTER"] = (int)LV_ALIGN_CENTER;
+            lua["_lvgl_module.ALIGN_OUT_TOP_LEFT"] = (int)LV_ALIGN_OUT_TOP_LEFT;
+            lua["_lvgl_module.ALIGN_OUT_TOP_MID"] = (int)LV_ALIGN_OUT_TOP_MID;
+            lua["_lvgl_module.ALIGN_OUT_TOP_RIGHT"] = (int)LV_ALIGN_OUT_TOP_RIGHT;
+            lua["_lvgl_module.ALIGN_OUT_BOTTOM_LEFT"] = (int)LV_ALIGN_OUT_BOTTOM_LEFT;
+            lua["_lvgl_module.ALIGN_OUT_BOTTOM_MID"] = (int)LV_ALIGN_OUT_BOTTOM_MID;
+            lua["_lvgl_module.ALIGN_OUT_BOTTOM_RIGHT"] = (int)LV_ALIGN_OUT_BOTTOM_RIGHT;
+            lua["_lvgl_module.ALIGN_OUT_LEFT_TOP"] = (int)LV_ALIGN_OUT_LEFT_TOP;
+            lua["_lvgl_module.ALIGN_OUT_LEFT_MID"] = (int)LV_ALIGN_OUT_LEFT_MID;
+            lua["_lvgl_module.ALIGN_OUT_LEFT_BOTTOM"] = (int)LV_ALIGN_OUT_LEFT_BOTTOM;
+            lua["_lvgl_module.ALIGN_OUT_RIGHT_TOP"] = (int)LV_ALIGN_OUT_RIGHT_TOP;
+            lua["_lvgl_module.ALIGN_OUT_RIGHT_MID"] = (int)LV_ALIGN_OUT_RIGHT_MID;
+            lua["_lvgl_module.ALIGN_OUT_RIGHT_BOTTOM"] = (int)LV_ALIGN_OUT_RIGHT_BOTTOM;
+
+            // ========== TEXT ALIGN constants ==========
+            lua["_lvgl_module.TEXT_ALIGN_LEFT"] = (int)lv_text_align_t.LV_TEXT_ALIGN_LEFT;
+            lua["_lvgl_module.TEXT_ALIGN_CENTER"] = (int)lv_text_align_t.LV_TEXT_ALIGN_CENTER;
+            lua["_lvgl_module.TEXT_ALIGN_RIGHT"] = (int)lv_text_align_t.LV_TEXT_ALIGN_RIGHT;
+            lua["_lvgl_module.TEXT_ALIGN_AUTO"] = (int)lv_text_align_t.LV_TEXT_ALIGN_AUTO;
+
+            // ========== OBJ FLAG constants ==========
+            lua["_lvgl_module.OBJ_FLAG_SCROLLABLE"] = (int)LV_OBJ_FLAG_SCROLLABLE;
+            lua["_lvgl_module.OBJ_FLAG_CLICKABLE"] = (int)LV_OBJ_FLAG_CLICKABLE;
+            lua["_lvgl_module.OBJ_FLAG_HIDDEN"] = (int)LV_OBJ_FLAG_HIDDEN;
+
+            // ========== Other constants ==========
+            lua["_lvgl_module.RADIUS_CIRCLE"] = 0x7FFF; // LV_RADIUS_CIRCLE
+
+            // ========== Register object create functions ==========
+            lua.RegisterFunction("_lvgl_module.scr_act", typeof(Program).GetMethod(nameof(LuaGetScreen)));
+            lua.RegisterFunction("_lvgl_module.btn_create", typeof(Program).GetMethod(nameof(LuaBtnCreate)));
+            lua.RegisterFunction("_lvgl_module.label_create", typeof(Program).GetMethod(nameof(LuaLabelCreate)));
+            lua.RegisterFunction("_lvgl_module.obj_create", typeof(Program).GetMethod(nameof(LuaObjCreate)));
+            lua.RegisterFunction("_lvgl_module.chart_create", typeof(Program).GetMethod(nameof(LuaChartCreate)));
+            lua.RegisterFunction("_lvgl_module.slider_create", typeof(Program).GetMethod(nameof(LuaSliderCreate)));
+
+            // ========== Register function-style API (for widget_template.lua compatibility) ==========
+            lua.RegisterFunction("_lvgl_module.obj_set_size", typeof(Program).GetMethod(nameof(LuaObjSetSize)));
+            lua.RegisterFunction("_lvgl_module.obj_set_pos", typeof(Program).GetMethod(nameof(LuaObjSetPos)));
+            lua.RegisterFunction("_lvgl_module.obj_set_style_bg_color", typeof(Program).GetMethod(nameof(LuaObjSetStyleBgColor)));
+
+            // ========== Event and timer functions ==========
+            lua.RegisterFunction("_lvgl_module.obj_add_event_cb", typeof(Program).GetMethod(nameof(LuaObjAddEventCb)));
+            lua.RegisterFunction("_lvgl_module.timer_create", typeof(Program).GetMethod(nameof(LuaTimerCreate)));
+            lua.RegisterFunction("_lvgl_module.timer_delete", typeof(Program).GetMethod(nameof(LuaTimerDelete)));
+
+            // ========== Utility functions ==========
+            lua.RegisterFunction("_lvgl_module.pct", typeof(Program).GetMethod(nameof(LuaPct)));
+
+            // 重写Lua的print函数，确保UTF-8编码正确输出
+            lua.DoString(@"
+                local original_print = print
+                print = function(...)
+                    local args = {...}
+                    local str_args = {}
+                    for i, v in ipairs(args) do
+                        str_args[i] = tostring(v)
+                    end
+                    original_print(table.concat(str_args, '\t'))
+                end
+            ");
+
+            // Replace the preloaded module with our actual implementation
+            lua.DoString(@"
+                package.preload['lvgl'] = function()
+                    return _lvgl_module
+                end
+                package.loaded['lvgl'] = _lvgl_module
+            ");
+        }
+
+        // ========== Create functions ==========
+
+        public static LvObjWrapper LuaGetScreen()
+        {
+            return new LvObjWrapper(Win32Window.root);
+        }
+
+        public static LvObjWrapper LuaBtnCreate(LvObjWrapper parent)
+        {
+            lv_obj_t* btn = lv_button_create(parent.Ptr);
+            return new LvObjWrapper(btn);
+        }
+
+        public static LvObjWrapper LuaLabelCreate(LvObjWrapper parent)
+        {
+            lv_obj_t* label = lv_label_create(parent.Ptr);
+            return new LvObjWrapper(label);
+        }
+
+        public static LvObjWrapper LuaObjCreate(LvObjWrapper parent)
+        {
+            lv_obj_t* obj = lv_obj_create(parent.Ptr);
+            return new LvObjWrapper(obj);
+        }
+
+        public static LvChartWrapper LuaChartCreate(LvObjWrapper parent)
+        {
+            lv_obj_t* chart = lv_chart_create(parent.Ptr);
+            return new LvChartWrapper(chart);
+        }
+
+        public static LvObjWrapper LuaSliderCreate(LvObjWrapper parent)
+        {
+            lv_obj_t* slider = lv_slider_create(parent.Ptr);
+            return new LvObjWrapper(slider);
+        }
+
+        // ========== Function-style API (lv.obj_set_size, lv.obj_set_pos, etc.) ==========
+
+        public static void LuaObjSetSize(LvObjWrapper obj, int width, int height)
+        {
+            obj.set_size(width, height);
+        }
+
+        public static void LuaObjSetPos(LvObjWrapper obj, int x, int y)
+        {
+            obj.set_pos(x, y);
+        }
+
+        public static void LuaObjSetStyleBgColor(LvObjWrapper obj, int color, int selector)
+        {
+            obj.set_style_bg_color(color, selector);
+        }
+
+        // ========== Utility functions ==========
+
+        public static int LuaPct(int value)
+        {
+            return lv_pct(value);
+        }
+
+        // ========== Timer functions ==========
+
+        public static LvTimerWrapper LuaTimerCreate(LuaFunction callback, int periodMs)
+        {
+            var timerData = new TimerCallbackData { Callback = callback };
+            _timerCallbacks.Add(timerData);
+            GCHandle handle = GCHandle.Alloc(timerData);
+
+            lv_timer_t* timer = lv_timer_create(&LuaTimerHandler, (uint)periodMs, (void*)GCHandle.ToIntPtr(handle));
+            timerData.Timer = timer;
+            return new LvTimerWrapper(timer, handle);
+        }
+
+        public static void LuaTimerDelete(LvTimerWrapper timerWrapper)
+        {
+            if (timerWrapper != null && timerWrapper.Ptr != null)
+            {
+                lv_timer_delete(timerWrapper.Ptr);
+                if (timerWrapper.Handle.IsAllocated)
+                {
+                    var data = timerWrapper.Handle.Target as TimerCallbackData;
+                    if (data != null)
+                    {
+                        _timerCallbacks.Remove(data);
+                    }
+                    timerWrapper.Handle.Free();
+                }
+            }
+        }
+
+        [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+        static void LuaTimerHandler(lv_timer_t* timer)
+        {
+            void* userData = lv_timer_get_user_data(timer);
+            if (userData == null) return;
+
+            GCHandle handle = GCHandle.FromIntPtr((IntPtr)userData);
+            if (handle.Target is TimerCallbackData data)
+            {
+                try
+                {
+                    data.Callback.Call();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Lua timer callback error: {ex.Message}");
+                }
+            }
+        }
+
+        // ========== Event functions ==========
+
+        public static void LuaObjAddEventCb(LvObjWrapper obj, LuaFunction callback, int eventCode, object? userData)
+        {
+            var callbackData = new EventCallbackData
+            {
+                Callback = callback,
+                UserData = userData,
+                ObjWrapper = obj
+            };
+            _eventCallbacks.Add(callbackData);
+            GCHandle handle = GCHandle.Alloc(callbackData);
+
+            lv_obj_add_event_cb(obj.Ptr, &LuaEventHandler, (lv_event_code_t)eventCode, (void*)GCHandle.ToIntPtr(handle));
+        }
+
+        [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+        static void LuaEventHandler(lv_event_t* e)
+        {
+            void* userData = lv_event_get_user_data(e);
+            if (userData == null) return;
+
+            GCHandle handle = GCHandle.FromIntPtr((IntPtr)userData);
+            if (handle.Target is EventCallbackData data)
+            {
+                try
+                {
+                    data.Callback.Call(new LvEventWrapper(e));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Lua event callback error: {ex.Message}");
+                }
+            }
+        }
+        class EventCallbackData
+        {
+            public LuaFunction Callback { get; set; } = null!;
+            public object? UserData { get; set; }
+            public LvObjWrapper? ObjWrapper { get; set; }
+        }
+
+        class TimerCallbackData
+        {
+            public LuaFunction Callback { get; set; } = null!;
+            public lv_timer_t* Timer { get; set; }
+        }
+    }
+    /// <summary>
+    /// Wrapper class for lv_event_t*
+    /// </summary>
+    public unsafe class LvEventWrapper
+    {
+        private readonly lv_event_t* _ptr;
+
+        public LvEventWrapper(lv_event_t* ptr)
+        {
+            _ptr = ptr;
+        }
+
+        public int get_code()
+        {
+            return (int)lv_event_get_code(_ptr);
+        }
+
+        public LvObjWrapper get_target()
+        {
+            return new LvObjWrapper((lv_obj_t*)lv_event_get_target(_ptr));
+        }
+    }
+
+    /// <summary>
+    /// Wrapper class for lv_timer_t*
+    /// </summary>
+    public unsafe class LvTimerWrapper
+    {
+        internal lv_timer_t* Ptr { get; }
+        internal GCHandle Handle { get; }
+
+        public LvTimerWrapper(lv_timer_t* ptr, GCHandle handle)
+        {
+            Ptr = ptr;
+            Handle = handle;
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for chart series pointer
+    /// </summary>
+    public unsafe class LvChartSeriesWrapper
+    {
+        internal lv_chart_series_t* Ptr { get; }
+
+        public LvChartSeriesWrapper(lv_chart_series_t* ptr)
+        {
+            Ptr = ptr;
+        }
+    }
+
+    /// <summary>
+    /// Wrapper class for lv_obj_t* (chart specific)
+    /// </summary>
+    public unsafe class LvChartWrapper : LvObjWrapper
+    {
+        public LvChartWrapper(lv_obj_t* ptr) : base(ptr) { }
+
+        public void set_type(int type)
+        {
+            lv_chart_set_type(Ptr, (lv_chart_type_t)type);
+        }
+
+        public void set_point_count(int count)
+        {
+            lv_chart_set_point_count(Ptr, (uint)count);
+        }
+
+        public void set_update_mode(int mode)
+        {
+            lv_chart_set_update_mode(Ptr, (lv_chart_update_mode_t)mode);
+        }
+
+        public void set_div_line_count(int hdiv, int vdiv)
+        {
+            lv_chart_set_div_line_count(Ptr, (byte)hdiv, (byte)vdiv);
+        }
+
+        public LvChartSeriesWrapper add_series(int color, int axis)
+        {
+            lv_color_t lvColor = lv_color_hex((uint)color);
+            lv_chart_series_t* series = lv_chart_add_series(Ptr, lvColor, (lv_chart_axis_t)axis);
+            return new LvChartSeriesWrapper(series);
+        }
+
+        public void set_range(int axis, int min, int max)
+        {
+            lv_chart_set_range(Ptr, (lv_chart_axis_t)axis, min, max);
+        }
+
+        public void set_next_value(LvChartSeriesWrapper series, int value)
+        {
+            lv_chart_set_next_value(Ptr, series.Ptr, value);
+        }
+    }
+
+    /// <summary>
+    /// Wrapper class for lv_obj_t* to expose LVGL objects to Lua
+    /// </summary>
+    public unsafe class LvObjWrapper
+    {
+        internal lv_obj_t* Ptr { get; }
+
+        public LvObjWrapper(lv_obj_t* ptr)
+        {
+            Ptr = ptr;
+        }
+
+        public void set_size(int width, int height)
+        {
+            lv_obj_set_size(Ptr, width, height);
+        }
+
+        public void set_width(int width)
+        {
+            lv_obj_set_width(Ptr, width);
+        }
+
+        public void set_height(int height)
+        {
+            lv_obj_set_height(Ptr, height);
+        }
+
+        public void set_pos(int x, int y)
+        {
+            lv_obj_set_pos(Ptr, x, y);
+        }
+
+        public void set_text(string text)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(text + "\0");
+            fixed (byte* ptr = utf8)
+            {
+                lv_label_set_text(Ptr, ptr);
+            }
+        }
+
+        public void center()
+        {
+            lv_obj_center(Ptr);
+        }
+
+        public void align(int alignType, int xOffset, int yOffset)
+        {
+            lv_obj_align(Ptr, (lv_align_t)alignType, xOffset, yOffset);
+        }
+
+        public void align_to(LvObjWrapper baseObj, int alignType, int xOffset, int yOffset)
+        {
+            lv_obj_align_to(Ptr, baseObj.Ptr, (lv_align_t)alignType, xOffset, yOffset);
+        }
+
+        public void delete()
+        {
+            lv_obj_delete(Ptr);
+        }
+
+        public void remove_flag(int flag)
+        {
+            lv_obj_remove_flag(Ptr, (lv_obj_flag_t)flag);
+        }
+
+        public void add_flag(int flag)
+        {
+            lv_obj_add_flag(Ptr, (lv_obj_flag_t)flag);
+        }
+
+        // ========== Style methods ==========
+
+        public void set_style_bg_color(int color, int selector)
+        {
+            lv_color_t lvColor = lv_color_hex((uint)color);
+            lv_obj_set_style_bg_color(Ptr, lvColor, (uint)selector);
+        }
+
+        public void set_style_bg_opa(int opa, int selector)
+        {
+            lv_obj_set_style_bg_opa(Ptr, (byte)opa, (uint)selector);
+        }
+
+        public void set_style_radius(int radius, int selector)
+        {
+            lv_obj_set_style_radius(Ptr, radius, (uint)selector);
+        }
+
+        public void set_style_border_width(int width, int selector)
+        {
+            lv_obj_set_style_border_width(Ptr, width, (uint)selector);
+        }
+
+        public void set_style_border_color(int color, int selector)
+        {
+            lv_color_t lvColor = lv_color_hex((uint)color);
+            lv_obj_set_style_border_color(Ptr, lvColor, (uint)selector);
+        }
+
+        public void set_style_text_align(int align, int selector)
+        {
+            lv_obj_set_style_text_align(Ptr, (lv_text_align_t)align, (uint)selector);
+        }
+
+        public void set_style_transform_rotation(int angle, int selector)
+        {
+            lv_obj_set_style_transform_rotation(Ptr, angle, (uint)selector);
+        }
+
+        public void set_style_transform_pivot_x(int x, int selector)
+        {
+            lv_obj_set_style_transform_pivot_x(Ptr, x, (uint)selector);
+        }
+
+        public void set_style_transform_pivot_y(int y, int selector)
+        {
+            lv_obj_set_style_transform_pivot_y(Ptr, y, (uint)selector);
+        }
+
+        public void add_event_cb(LuaFunction callback, int eventCode, object? userData)
+        {
+            Program.LuaObjAddEventCb(this, callback, eventCode, userData);
+        }
+    }
+}

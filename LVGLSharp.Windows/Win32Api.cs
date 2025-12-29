@@ -183,5 +183,22 @@ namespace LVGLSharp.Runtime.Windows
 
             return dpiX;
         }
+
+        // 获取屏幕尺寸的常量
+        const int SM_CXSCREEN = 0;
+        const int SM_CYSCREEN = 1;
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int nIndex);
+
+        /// <summary>
+        /// 获取屏幕宽度
+        /// </summary>
+        public static int GetScreenWidth() => GetSystemMetrics(SM_CXSCREEN);
+
+        /// <summary>
+        /// 获取屏幕高度
+        /// </summary>
+        public static int GetScreenHeight() => GetSystemMetrics(SM_CYSCREEN);
     }
 }

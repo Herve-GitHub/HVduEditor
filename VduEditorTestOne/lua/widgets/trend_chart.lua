@@ -11,13 +11,14 @@ TrendChart.__widget_meta = {
     properties = {
         { name = "x", type = "number", default = 0, label = "X" },
         { name = "y", type = "number", default = 0, label = "Y" },
-        { name = "width", type = "number", default = 300, label = "宽度" },
-        { name = "height", type = "number", default = 120, label = "高度" },
-        { name = "point_count", type = "number", default = 300, label = "点数", min = 1, max = 5000 },
+        { name = "width", type = "number", default = 200, label = "宽度" },
+        { name = "height", type = "number", default = 100, label = "高度" },
+        { name = "point_count", type = "number", default = 100, label = "点数", min = 1, max = 5000 },
         { name = "update_interval", type = "number", default = 1000, label = "刷新间隔(ms)", min = 10 },
         { name = "range_min", type = "number", default = 0, label = "最小值" },
         { name = "range_max", type = "number", default = 100, label = "最大值" },
-        { name = "auto_update", type = "boolean", default = true, label = "自动更新" },
+        { name = "auto_update", type = "boolean", default = false, label = "自动更新" },
+        { name = "design_mode", type = "boolean", default = true, label = "设计模式" },
     },
     events = { "updated" },
 }
@@ -49,16 +50,19 @@ function TrendChart.new(parent, props)
 
     -- event listeners
     self._event_listeners = { updated = {} }
+    self.timer = nil
 
     function self.update(self)
         -- placeholder: generate random value; editor/host can push real data by calling set_property or chart API
-        local val = 50 + math.random(self.props.range_min, self.props.range_max)%20
+        local val = 50 + math.random(self.props.range_min, self.props.range_max) % 20
         self.chart:set_next_value(self.series, val)
         for _, cb in ipairs(self._event_listeners.updated) do cb(self, val) end
     end
 
     function self.start(self)
         if self.timer then return end
+        -- 设计模式下不启动定时器
+        if self.props.design_mode then return end
         self.timer = lv.timer_create(function()
             self:update()
         end, self.props.update_interval)
@@ -91,7 +95,17 @@ function TrendChart.new(parent, props)
         elseif name == "range_min" or name == "range_max" then
             self.chart:set_range(0, self.props.range_min, self.props.range_max)
         elseif name == "auto_update" then
-            if value then self:start() else self:stop() end
+            if value and not self.props.design_mode then 
+                self:start() 
+            else 
+                self:stop() 
+            end
+        elseif name == "design_mode" then
+            if value then
+                self:stop()
+            elseif self.props.auto_update then
+                self:start()
+            end
         end
         return true
     end
@@ -116,8 +130,11 @@ function TrendChart.new(parent, props)
         table.insert(self._event_listeners[event_name], callback)
     end
 
-    -- auto start if requested
-    if self.props.auto_update then self:start() end
+    -- 设计模式下不自动启动
+    -- auto start only if NOT in design mode and auto_update is true
+    if self.props.auto_update and not self.props.design_mode then 
+        self:start() 
+    end
 
     return self
 end

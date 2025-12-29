@@ -13,7 +13,7 @@ namespace VduEditorTestOne
         static Lua? _lua;
         static List<EventCallbackData> _eventCallbacks = new();
         static List<TimerCallbackData> _timerCallbacks = new();
-
+        static lv_style_t* defaultFontStyle = null;
         static void Main(string[] args)
         {
             // 设置控制台输出编码为UTF-8，解决中文乱码问题
@@ -37,7 +37,11 @@ namespace VduEditorTestOne
             // Initialize window
             _window = new Win32Window("LVGL Lua Demo", 1024, 768);
             _window.Init();
-
+            var font = lv_obj_get_style_text_font(Win32Window.root, LV_PART_MAIN);
+            defaultFontStyle = (lv_style_t*)NativeMemory.Alloc((nuint)sizeof(lv_style_t));
+            NativeMemory.Clear(defaultFontStyle, (nuint)sizeof(lv_style_t));
+            lv_style_init(defaultFontStyle);
+            lv_style_set_text_font(defaultFontStyle, font);
             // Initialize Lua with LVGL bindings
             _lua = new Lua();
             _lua.State.Encoding = Encoding.UTF8;
@@ -82,7 +86,14 @@ namespace VduEditorTestOne
             lua["_lvgl_module.EVENT_PRESSED"] = (int)LV_EVENT_PRESSED;
             lua["_lvgl_module.EVENT_RELEASED"] = (int)LV_EVENT_RELEASED;
             lua["_lvgl_module.EVENT_LONG_PRESSED"] = (int)LV_EVENT_LONG_PRESSED;
+            lua["_lvgl_module.EVENT_LONG_PRESSED_REPEAT"] = (int)LV_EVENT_LONG_PRESSED_REPEAT;
             lua["_lvgl_module.EVENT_VALUE_CHANGED"] = (int)LV_EVENT_VALUE_CHANGED;
+            lua["_lvgl_module.EVENT_PRESSING"] = (int)LV_EVENT_PRESSING;
+            lua["_lvgl_module.EVENT_SCROLL"] = (int)LV_EVENT_SCROLL;
+            lua["_lvgl_module.EVENT_SCROLL_BEGIN"] = (int)LV_EVENT_SCROLL_BEGIN;
+            lua["_lvgl_module.EVENT_SCROLL_END"] = (int)LV_EVENT_SCROLL_END;
+            lua["_lvgl_module.EVENT_FOCUSED"] = (int)LV_EVENT_FOCUSED;
+            lua["_lvgl_module.EVENT_DEFOCUSED"] = (int)LV_EVENT_DEFOCUSED;
 
             // ========== ALIGN constants ==========
             lua["_lvgl_module.ALIGN_DEFAULT"] = (int)LV_ALIGN_DEFAULT;
@@ -118,6 +129,16 @@ namespace VduEditorTestOne
             lua["_lvgl_module.OBJ_FLAG_SCROLLABLE"] = (int)LV_OBJ_FLAG_SCROLLABLE;
             lua["_lvgl_module.OBJ_FLAG_CLICKABLE"] = (int)LV_OBJ_FLAG_CLICKABLE;
             lua["_lvgl_module.OBJ_FLAG_HIDDEN"] = (int)LV_OBJ_FLAG_HIDDEN;
+            lua["_lvgl_module.OBJ_FLAG_CHECKABLE"] = (int)LV_OBJ_FLAG_CHECKABLE;
+            lua["_lvgl_module.OBJ_FLAG_PRESS_LOCK"] = (int)LV_OBJ_FLAG_PRESS_LOCK;
+            lua["_lvgl_module.OBJ_FLAG_GESTURE_BUBBLE"] = (int)LV_OBJ_FLAG_GESTURE_BUBBLE;
+            lua["_lvgl_module.OBJ_FLAG_SNAPPABLE"] = (int)LV_OBJ_FLAG_SNAPPABLE;
+            lua["_lvgl_module.OBJ_FLAG_SCROLL_ON_FOCUS"] = (int)LV_OBJ_FLAG_SCROLL_ON_FOCUS;
+
+            // ========== LAYOUT constants ==========
+            lua["_lvgl_module.LAYOUT_NONE"] = (int)lv_layout_t.LV_LAYOUT_NONE;
+            lua["_lvgl_module.LAYOUT_FLEX"] = (int)lv_layout_t.LV_LAYOUT_FLEX;
+            lua["_lvgl_module.LAYOUT_GRID"] = (int)lv_layout_t.LV_LAYOUT_GRID;
 
             // ========== Other constants ==========
             lua["_lvgl_module.RADIUS_CIRCLE"] = 0x7FFF; // LV_RADIUS_CIRCLE
@@ -142,6 +163,8 @@ namespace VduEditorTestOne
 
             // ========== Utility functions ==========
             lua.RegisterFunction("_lvgl_module.pct", typeof(Program).GetMethod(nameof(LuaPct)));
+            lua.RegisterFunction("_lvgl_module.get_mouse_x", typeof(Program).GetMethod(nameof(LuaGetMouseX)));
+            lua.RegisterFunction("_lvgl_module.get_mouse_y", typeof(Program).GetMethod(nameof(LuaGetMouseY)));
 
             // 重写Lua的print函数，确保UTF-8编码正确输出
             lua.DoString(@"
@@ -226,6 +249,21 @@ namespace VduEditorTestOne
             return lv_pct(value);
         }
 
+        /// <summary>
+        /// 获取当前鼠标X坐标
+        /// </summary>
+        public static int LuaGetMouseX()
+        {
+            return Win32Window.MouseX;
+        }
+
+        /// <summary>
+        /// 获取当前鼠标Y坐标
+        /// </summary>
+        public static int LuaGetMouseY()
+        {
+            return Win32Window.MouseY;
+        }
         // ========== Timer functions ==========
 
         public static LvTimerWrapper LuaTimerCreate(LuaFunction callback, int periodMs)
@@ -434,6 +472,153 @@ namespace VduEditorTestOne
             Ptr = ptr;
         }
 
+        // ========== 获取元素相关方法 ==========
+
+        /// <summary>
+        /// 获取子元素数量
+        /// </summary>
+        public int get_child_count()
+        {
+            return (int)lv_obj_get_child_count(Ptr);
+        }
+
+        /// <summary>
+        /// 获取指定索引的子元素
+        /// </summary>
+        public LvObjWrapper? get_child(int index)
+        {
+            lv_obj_t* child = lv_obj_get_child(Ptr, index);
+            return child != null ? new LvObjWrapper(child) : null;
+        }
+
+        /// <summary>
+        /// 获取父元素
+        /// </summary>
+        public LvObjWrapper? get_parent()
+        {
+            lv_obj_t* parent = lv_obj_get_parent(Ptr);
+            return parent != null ? new LvObjWrapper(parent) : null;
+        }
+
+        /// <summary>
+        /// 获取所有子元素
+        /// </summary>
+        public List<LvObjWrapper> get_children()
+        {
+            var children = new List<LvObjWrapper>();
+            int count = get_child_count();
+            for (int i = 0; i < count; i++)
+            {
+                var child = get_child(i);
+                if (child != null)
+                {
+                    children.Add(child);
+                }
+            }
+            return children;
+        }
+
+        /// <summary>
+        /// 递归获取所有后代元素
+        /// </summary>
+        public List<LvObjWrapper> get_all_descendants()
+        {
+            var descendants = new List<LvObjWrapper>();
+            CollectDescendants(this, descendants);
+            return descendants;
+        }
+
+        private static void CollectDescendants(LvObjWrapper obj, List<LvObjWrapper> list)
+        {
+            foreach (var child in obj.get_children())
+            {
+                list.Add(child);
+                CollectDescendants(child, list);
+            }
+        }
+
+        /// <summary>
+        /// 获取元素在父元素中的索引
+        /// </summary>
+        public int get_index()
+        {
+            return lv_obj_get_index(Ptr);
+        }
+
+        /// <summary>
+        /// 获取元素的X坐标
+        /// </summary>
+        public int get_x()
+        {
+            return lv_obj_get_x(Ptr);
+        }
+
+        /// <summary>
+        /// 获取元素的Y坐标
+        /// </summary>
+        public int get_y()
+        {
+            return lv_obj_get_y(Ptr);
+        }
+
+        /// <summary>
+        /// 获取元素的宽度
+        /// </summary>
+        public int get_width()
+        {
+            return lv_obj_get_width(Ptr);
+        }
+
+        /// <summary>
+        /// 获取元素的高度
+        /// </summary>
+        public int get_height()
+        {
+            return lv_obj_get_height(Ptr);
+        }
+
+        /// <summary>
+        /// 获取元素的内容宽度
+        /// </summary>
+        public int get_content_width()
+        {
+            return lv_obj_get_content_width(Ptr);
+        }
+
+        /// <summary>
+        /// 获取元素的内容高度
+        /// </summary>
+        public int get_content_height()
+        {
+            return lv_obj_get_content_height(Ptr);
+        }
+
+        /// <summary>
+        /// 检查元素是否可见
+        /// </summary>
+        public bool is_visible()
+        {
+            return lv_obj_is_visible(Ptr);
+        }
+
+        /// <summary>
+        /// 检查元素是否有指定的标志
+        /// </summary>
+        public bool has_flag(int flag)
+        {
+            return lv_obj_has_flag(Ptr, (lv_obj_flag_t)flag);
+        }
+
+        /// <summary>
+        /// 获取元素的状态
+        /// </summary>
+        public int get_state()
+        {
+            return lv_obj_get_state(Ptr);
+        }
+
+        // ========== 原有方法 ==========
+
         public void set_size(int width, int height)
         {
             lv_obj_set_size(Ptr, width, height);
@@ -493,6 +678,22 @@ namespace VduEditorTestOne
             lv_obj_add_flag(Ptr, (lv_obj_flag_t)flag);
         }
 
+        /// <summary>
+        /// 设置布局类型 (0 = NONE, 1 = FLEX, 2 = GRID)
+        /// </summary>
+        public void set_layout(int layout)
+        {
+            lv_obj_set_layout(Ptr, (uint)layout);
+        }
+
+        /// <summary>
+        /// 清除布局，恢复为无布局模式
+        /// </summary>
+        public void clear_layout()
+        {
+            lv_obj_set_layout(Ptr, (uint)lv_layout_t.LV_LAYOUT_NONE);
+        }
+
         // ========== Style methods ==========
 
         public void set_style_bg_color(int color, int selector)
@@ -540,6 +741,53 @@ namespace VduEditorTestOne
         public void set_style_transform_pivot_y(int y, int selector)
         {
             lv_obj_set_style_transform_pivot_y(Ptr, y, (uint)selector);
+        }
+
+        public void set_style_pad_all(int pad, int selector)
+        {
+            lv_obj_set_style_pad_all(Ptr, pad, (uint)selector);
+        }
+
+        public void set_style_pad_top(int pad, int selector)
+        {
+            lv_obj_set_style_pad_top(Ptr, pad, (uint)selector);
+        }
+
+        public void set_style_pad_bottom(int pad, int selector)
+        {
+            lv_obj_set_style_pad_bottom(Ptr, pad, (uint)selector);
+        }
+
+        public void set_style_pad_left(int pad, int selector)
+        {
+            lv_obj_set_style_pad_left(Ptr, pad, (uint)selector);
+        }
+
+        public void set_style_pad_right(int pad, int selector)
+        {
+            lv_obj_set_style_pad_right(Ptr, pad, (uint)selector);
+        }
+
+        public void set_style_text_color(int color, int selector)
+        {
+            lv_color_t lvColor = lv_color_hex((uint)color);
+            lv_obj_set_style_text_color(Ptr, lvColor, (uint)selector);
+        }
+
+        public void set_style_shadow_width(int width, int selector)
+        {
+            lv_obj_set_style_shadow_width(Ptr, width, (uint)selector);
+        }
+
+        public void set_style_shadow_color(int color, int selector)
+        {
+            lv_color_t lvColor = lv_color_hex((uint)color);
+            lv_obj_set_style_shadow_color(Ptr, lvColor, (uint)selector);
+        }
+
+        public void set_style_shadow_opa(int opa, int selector)
+        {
+            lv_obj_set_style_shadow_opa(Ptr, (byte)opa, (uint)selector);
         }
 
         public void add_event_cb(LuaFunction callback, int eventCode, object? userData)
