@@ -36,7 +36,7 @@ function ToolsBox.new(parent, props)
         title_bg_color = props.title_bg_color or 0x3D3D3D,
         border_color = props.border_color or 0x555555,
         text_color = props.text_color or 0xFFFFFF,
-        visible = props.visible ~= false,
+        visible = props.visible or false,
         collapsed = props.collapsed or false,  -- 折叠状态
     }
     

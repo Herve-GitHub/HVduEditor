@@ -28,8 +28,8 @@ scr:set_style_text_color(0xFFFFFF, 0)
 print("=== VDU 编辑器启动 ===")
 
 -- 定义布局尺寸
-local WINDOW_WIDTH = 1024
-local WINDOW_HEIGHT = 768
+local WINDOW_WIDTH = 1024;
+local WINDOW_HEIGHT = 768;
 local MENUBAR_HEIGHT = 36
 local STATUSBAR_HEIGHT = 23
 
@@ -47,8 +47,8 @@ local canvas = CanvasArea.new(scr, {
     y = MENUBAR_HEIGHT,
     width = WINDOW_WIDTH,
     height = WINDOW_HEIGHT - MENUBAR_HEIGHT - STATUSBAR_HEIGHT,
-    show_grid = true,
-    snap_to_grid = true,
+    show_grid = false,
+    snap_to_grid = false,
     grid_size = 20,
 })
 
@@ -62,10 +62,10 @@ local toolbox = ToolsBox.new(scr, {
 -- 创建属性窗口
 local PropertyArea = require("PropertyArea")
 local property_area = PropertyArea.new(scr, {
-    x = 820,
+    x = 700,
     y = MENUBAR_HEIGHT + 10,
-    width = 200,
-    visible = false,
+    width = 300,
+    visible = true,
 })
 
 -- 同步菜单栏状态与画布/工具箱/属性窗口状态
@@ -76,14 +76,21 @@ menu_bar:set_state("show_properties", property_area:is_visible())
 
 -- 状态栏标签引用（后面会创建）
 local status_label = nil
+local time_label = ""
 
 -- 更新状态栏
 local function update_status_bar()
     if status_label then
         local grid_status = canvas:is_grid_visible() and "显示" or "隐藏"
         local snap_status = canvas:is_snap_to_grid() and "开启" or "关闭"
-        status_label:set_text("就绪 | 网格: " .. grid_status .. " | 对齐: " .. snap_status .. " | 网格大小: " .. canvas.props.grid_size .. "px")
+        status_label:set_text("就绪 | 网格: " .. grid_status .. " | 对齐: " .. snap_status .. " | 网格大小: " .. canvas.props.grid_size .. "px | 当前时间:"..time_label)
     end
+end
+
+-- 更新时间显示
+local function update_time()
+    time_label = os.date("%H:%M:%S")
+    update_status_bar()
 end
 
 -- 菜单事件处理
@@ -145,19 +152,6 @@ end)
 
 canvas:on("widget_selected", function(self, widget_entry)
     print("[画布] 选中控件: " .. widget_entry.id)
-    -- 获取所选控件的实例并调用其 get_properties，如果存在
-    local inst = widget_entry.instance
-    if inst and inst.get_properties then
-        local ok, props = pcall(function() return inst:get_properties() end)
-        if ok and props then
-            property_area:show()
-            property_area:set_properties(props)
-        else
-            print("[属性窗口] 获取属性失败: " .. tostring(props))
-        end
-    else
-        print("[属性窗口] 选中控件没有 get_properties 方法")
-    end
 end)
 
 canvas:on("widgets_selected", function(self, widget_entries)
@@ -251,9 +245,11 @@ status_label:align(lv.ALIGN_LEFT_MID, 10, 0)
 
 -- 初始化状态栏
 update_status_bar()
+update_time()
+
+-- 创建定时器，每秒更新时间 (1000毫秒)
+local time_timer = lv.timer_create(function()
+    update_time()
+end, 1000)
 
 print("=== 编辑器初始化完成 ===")
-print("菜单栏高度: " .. menu_bar:get_height())
-print("画布区域: 全屏 (" .. WINDOW_WIDTH .. "x" .. (WINDOW_HEIGHT - MENUBAR_HEIGHT - STATUSBAR_HEIGHT) .. ")")
-print("工具箱: 浮动在画布左上角")
-print("提示: 从工具箱拖拽控件到画布上释放即可创建")

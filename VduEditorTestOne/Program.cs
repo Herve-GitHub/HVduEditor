@@ -40,7 +40,7 @@ namespace VduEditorTestOne
             }
 
             // Initialize window
-            _window = new Win32Window("LVGL Lua Demo", 1024, 768);
+            _window = new Win32Window("LVGL Lua Demo", 1024, 810);
             _window.Init();
             var font = lv_obj_get_style_text_font(Win32Window.root, LV_PART_MAIN);
             defaultFontStyle = (lv_style_t*)NativeMemory.Alloc((nuint)sizeof(lv_style_t));
@@ -120,6 +120,7 @@ namespace VduEditorTestOne
             lua["_lvgl_module.EVENT_SCROLL_END"] = (int)LV_EVENT_SCROLL_END;
             lua["_lvgl_module.EVENT_FOCUSED"] = (int)LV_EVENT_FOCUSED;
             lua["_lvgl_module.EVENT_DEFOCUSED"] = (int)LV_EVENT_DEFOCUSED;
+            lua["_lvgl_module.EVENT_DRAW_MAIN"] = (int)LV_EVENT_DRAW_MAIN;
 
             // ========== ALIGN constants ==========
             lua["_lvgl_module.ALIGN_DEFAULT"] = (int)LV_ALIGN_DEFAULT;
@@ -186,6 +187,7 @@ namespace VduEditorTestOne
             lua.RegisterFunction("_lvgl_module.obj_add_event_cb", typeof(Program).GetMethod(nameof(LuaObjAddEventCb)));
             lua.RegisterFunction("_lvgl_module.timer_create", typeof(Program).GetMethod(nameof(LuaTimerCreate)));
             lua.RegisterFunction("_lvgl_module.timer_delete", typeof(Program).GetMethod(nameof(LuaTimerDelete)));
+            lua.RegisterFunction("_lvgl_module.event_get_code", typeof(Program).GetMethod(nameof(LuaEventGetCode)));
 
             // ========== Utility functions ==========
             lua.RegisterFunction("_lvgl_module.pct", typeof(Program).GetMethod(nameof(LuaPct)));
@@ -244,16 +246,6 @@ namespace VduEditorTestOne
             lv_obj_t* chart = lv_chart_create(parent.Ptr);
             return new LvChartWrapper(chart);
         }
-
-
-
-
-
-
-
-
-
-
 
         public static LvObjWrapper LuaSliderCreate(LvObjWrapper parent)
         {
@@ -371,6 +363,11 @@ namespace VduEditorTestOne
             GCHandle handle = GCHandle.Alloc(callbackData);
 
             lv_obj_add_event_cb(obj.Ptr, &LuaEventHandler, (lv_event_code_t)eventCode, (void*)GCHandle.ToIntPtr(handle));
+        }
+
+        public static int LuaEventGetCode(LvEventData eventData)
+        {
+            return eventData.get_code();
         }
 
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
