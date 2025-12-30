@@ -151,10 +151,14 @@ canvas:on("widget_added", function(self, widget_entry)
 end)
 
 canvas:on("widget_selected", function(self, widget_entry)
+    --通知属性
+    property_area:onSelectedItem(widget_entry)
     print("[画布] 选中控件: " .. widget_entry.id)
 end)
 
 canvas:on("widgets_selected", function(self, widget_entries)
+    --通知属性
+    property_area:onSelectedItem(widget_entries)
     print("[画布] 多选控件: " .. #widget_entries .. " 个")
     for _, w in ipairs(widget_entries) do
         print("  - " .. w.id)
@@ -162,6 +166,7 @@ canvas:on("widgets_selected", function(self, widget_entries)
 end)
 
 canvas:on("widget_deselected", function(self, prev_widget)
+    property_area:onSelectedItem(nil)
     print("[画布] 取消选中")
 end)
 

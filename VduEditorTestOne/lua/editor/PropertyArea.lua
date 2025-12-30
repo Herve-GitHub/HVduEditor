@@ -15,8 +15,8 @@ PropertyArea.__widget_meta = {
     schema_version = "1.0",
     version = "1.0",
 }
-
-
+local selectedItem = nil
+local selectedItems ={}
 -- 构造函数
 function PropertyArea.new(parent, props)
     props = props or {}
@@ -126,7 +126,7 @@ function PropertyArea:_create_title_bar()
     self.collapse_btn:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
     
     self.collapse_label = lv.label_create(self.collapse_btn)
-    self.collapse_label:set_text(self.props.collapsed and ">" or "v")
+    self.collapse_label:set_text(self.props.collapsed and "+" or "-")
     self.collapse_label:set_style_text_color(self.props.text_color, 0)
     self.collapse_label:center()
     
@@ -275,13 +275,13 @@ function PropertyArea:_apply_collapsed_state()
         self.content:add_flag(lv.OBJ_FLAG_HIDDEN)
         print(self.props.title_height)
         self.container:set_height(self.props.title_height)
-        self.collapse_label:set_text(">")
+        self.collapse_label:set_text("+")
     else
         -- 展开：显示全部
         self.content:remove_flag(lv.OBJ_FLAG_HIDDEN)
         print(self._content_height)
         self.container:set_height(self._content_height)
-        self.collapse_label:set_text("v")
+        self.collapse_label:set_text("-")
     end
 end
 
@@ -372,5 +372,46 @@ function PropertyArea:get_dragging_tool()
         return self._tool_drag_state.tool, self._tool_drag_state.module
     end
     return nil, nil
+end
+function PropertyArea:onSelectedItem(item)
+    if item == nil then
+        print("[属性窗口] 取消选中控件")
+        selectedItem = nil
+        selectedItems = {}
+        return
+    end
+    
+    -- item 可能是单个 widget_entry 或多个 widget_entries 列表
+    if type(item) == "table" and item.instance then
+        -- 单个选中
+        selectedItem = item
+        selectedItems = { item }
+        
+        local instance = item.instance
+        if not instance then
+            print("[属性窗口] 错误：选中项没有 instance")
+            return
+        end
+        
+        -- 调用实例的 get_properties 方法获取属性
+        if instance.get_properties then
+            local properties = instance:get_properties()
+            print("[属性窗口] 选中控件属性:")
+            for key, value in pairs(properties) do
+                print("  " .. key .. " = " .. tostring(value))
+            end
+            return properties
+        else
+            print("[属性窗口] 错误：实例没有 get_properties 方法")
+            return nil
+        end
+    elseif type(item) == "table" then
+        -- 多个选中
+        selectedItems = item
+        selectedItem = nil
+        
+        print("[属性窗口] 多个控件已选中，共 " .. #item .. " 个")
+        return nil
+    end
 end
 return PropertyArea

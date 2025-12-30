@@ -137,7 +137,7 @@ function ToolsBox:_create_title_bar()
     self.collapse_btn:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
     
     self.collapse_label = lv.label_create(self.collapse_btn)
-    self.collapse_label:set_text(self.props.collapsed and ">" or "v")
+    self.collapse_label:set_text(self.props.collapsed and "+" or "-")
     self.collapse_label:set_style_text_color(self.props.text_color, 0)
     self.collapse_label:center()
     
@@ -473,12 +473,12 @@ function ToolsBox:_apply_collapsed_state()
         -- 折叠：只显示标题栏
         self.content:add_flag(lv.OBJ_FLAG_HIDDEN)
         self.container:set_height(self.props.title_height)
-        self.collapse_label:set_text(">")
+        self.collapse_label:set_text("+")
     else
         -- 展开：显示全部
         self.content:remove_flag(lv.OBJ_FLAG_HIDDEN)
         self.container:set_height(self._total_height)
-        self.collapse_label:set_text("v")
+        self.collapse_label:set_text("-")
     end
 end
 
