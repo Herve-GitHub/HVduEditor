@@ -137,7 +137,7 @@ namespace VduEditorTestOne
             lua["_lvgl_module.ALIGN_OUT_TOP_MID"] = (int)LV_ALIGN_OUT_TOP_MID;
             lua["_lvgl_module.ALIGN_OUT_TOP_RIGHT"] = (int)LV_ALIGN_OUT_TOP_RIGHT;
             lua["_lvgl_module.ALIGN_OUT_BOTTOM_LEFT"] = (int)LV_ALIGN_OUT_BOTTOM_LEFT;
-            lua["_lvgl_module ALIGN_OUT_BOTTOM_MID"] = (int)LV_ALIGN_OUT_BOTTOM_MID;
+            lua["_lvgl_module.ALIGN_OUT_BOTTOM_MID"] = (int)LV_ALIGN_OUT_BOTTOM_MID;
             lua["_lvgl_module.ALIGN_OUT_BOTTOM_RIGHT"] = (int)LV_ALIGN_OUT_BOTTOM_RIGHT;
             lua["_lvgl_module.ALIGN_OUT_LEFT_TOP"] = (int)LV_ALIGN_OUT_LEFT_TOP;
             lua["_lvgl_module.ALIGN_OUT_LEFT_MID"] = (int)LV_ALIGN_OUT_LEFT_MID;
@@ -162,6 +162,15 @@ namespace VduEditorTestOne
             lua["_lvgl_module.OBJ_FLAG_SNAPPABLE"] = (int)LV_OBJ_FLAG_SNAPPABLE;
             lua["_lvgl_module.OBJ_FLAG_SCROLL_ON_FOCUS"] = (int)LV_OBJ_FLAG_SCROLL_ON_FOCUS;
 
+            // ========== STATE constants ==========
+            lua["_lvgl_module.STATE_DEFAULT"] = (int)LV_STATE_DEFAULT;
+            lua["_lvgl_module.STATE_CHECKED"] = (int)LV_STATE_CHECKED;
+            lua["_lvgl_module.STATE_FOCUSED"] = (int)LV_STATE_FOCUSED;
+            lua["_lvgl_module.STATE_EDITED"] = (int)LV_STATE_EDITED;
+            lua["_lvgl_module.STATE_HOVERED"] = (int)LV_STATE_HOVERED;
+            lua["_lvgl_module.STATE_PRESSED"] = (int)LV_STATE_PRESSED;
+            lua["_lvgl_module.STATE_DISABLED"] = (int)LV_STATE_DISABLED;
+
             // ========== LAYOUT constants ==========
             lua["_lvgl_module.LAYOUT_NONE"] = (int)lv_layout_t.LV_LAYOUT_NONE;
             lua["_lvgl_module.LAYOUT_FLEX"] = (int)lv_layout_t.LV_LAYOUT_FLEX;
@@ -177,6 +186,7 @@ namespace VduEditorTestOne
             lua.RegisterFunction("_lvgl_module.obj_create", typeof(Program).GetMethod(nameof(LuaObjCreate)));
             lua.RegisterFunction("_lvgl_module.chart_create", typeof(Program).GetMethod(nameof(LuaChartCreate)));
             lua.RegisterFunction("_lvgl_module.slider_create", typeof(Program).GetMethod(nameof(LuaSliderCreate)));
+            lua.RegisterFunction("_lvgl_module.textarea_create", typeof(Program).GetMethod(nameof(LuaTextareaCreate)));
 
             // ========== Register function-style API (for widget_template.lua compatibility) ==========
             lua.RegisterFunction("_lvgl_module.obj_set_size", typeof(Program).GetMethod(nameof(LuaObjSetSize)));
@@ -251,6 +261,14 @@ namespace VduEditorTestOne
         {
             lv_obj_t* slider = lv_slider_create(parent.Ptr);
             return new LvObjWrapper(slider);
+        }
+
+        public static LvTextareaWrapper LuaTextareaCreate(LvObjWrapper parent)
+        {
+            lv_obj_t* textarea = lv_textarea_create(parent.Ptr);
+            var wrapper = new LvTextareaWrapper(textarea);
+            Console.WriteLine($"[LuaTextareaCreate] Created LvTextareaWrapper, type: {wrapper.GetType().Name}");
+            return wrapper;
         }
 
         // ========== Function-style API (lv.obj_set_size, lv.obj_set_pos, etc.) ==========
@@ -576,6 +594,416 @@ namespace VduEditorTestOne
     }
 
     /// <summary>
+    /// Wrapper class for lv_obj_t* (textarea specific)
+    /// </summary>
+    public unsafe class LvTextareaWrapper : LvObjWrapper
+    {
+        // 保存 accepted_chars 的 引用，防止被 GC 回收
+        private byte[]? _acceptedCharsBuffer;
+        private GCHandle _acceptedCharsHandle;
+        
+        public LvTextareaWrapper(lv_obj_t* ptr) : base(ptr) 
+        {
+            // 自动将 textarea 添加到键盘输入组，以便接收键盘输入
+            lv_group_add_obj(Win32Window.key_inputGroup, ptr);
+            
+            // 启用点击光标定位
+            lv_textarea_set_cursor_click_pos(ptr, (c_bool1)1);
+            
+            // 默认状态下隐藏光标（透明）
+            lv_obj_set_style_bg_opa(ptr, 0, (uint)LV_PART_CURSOR);
+            
+            // 聚焦状态下显示白色光标
+            lv_color_t cursorColor = lv_color_hex(0xFFFFFF);
+            lv_obj_set_style_bg_color(ptr, cursorColor, (uint)(LV_PART_CURSOR | LV_STATE_FOCUSED));
+            lv_obj_set_style_bg_opa(ptr, 255, (uint)(LV_PART_CURSOR | LV_STATE_FOCUSED));
+            
+            // 添加聚焦事件回调，用于设置 IME 候选框位置，并自动进入编辑模式
+            lv_obj_add_event_cb(ptr, &OnTextareaFocused, LV_EVENT_FOCUSED, null);
+            
+            // 添加 PRESSED 事件回调，确保按下时立即将焦点设置到该 textarea
+            lv_obj_add_event_cb(ptr, &OnTextareaPressed, LV_EVENT_PRESSED, null);
+            
+            Console.WriteLine($"[LvTextareaWrapper] Created textarea at 0x{(IntPtr)ptr:X}, added to group, cursor_click_pos enabled");
+        }
+
+        [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+        static void OnTextareaFocused(lv_event_t* e)
+        {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            Console.WriteLine($"[LvTextareaWrapper] Textarea FOCUSED at 0x{(IntPtr)target:X}");
+            
+            // 设置 IME 候选框位置
+            lv_area_t area;
+            lv_obj_get_coords(target, &area);
+            int ime_x = area.x1;
+            int ime_y = area.y2;
+            
+            IntPtr hIMC = Win32Api.ImmGetContext(Win32Api.g_hwnd);
+            if (hIMC != IntPtr.Zero)
+            {
+                Win32Api.COMPOSITIONFORM compForm = new Win32Api.COMPOSITIONFORM();
+                compForm.dwStyle = Win32Api.CFS_POINT;
+                compForm.ptCurrentPos.x = ime_x;
+                compForm.ptCurrentPos.y = ime_y;
+                Win32Api.ImmSetCompositionWindow(hIMC, ref compForm);
+                Win32Api.ImmReleaseContext(Win32Api.g_hwnd, hIMC);
+            }
+            
+            // 自动进入编辑模式
+            lv_group_set_editing(Win32Window.key_inputGroup, (c_bool1)1);
+        }
+
+        [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+        static void OnTextareaPressed(lv_event_t* e)
+        {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            Console.WriteLine($"[LvTextareaWrapper] Textarea PRESSED, focusing object at 0x{(IntPtr)target:X}");
+            // 将焦点设置到被按下的 textarea
+            lv_group_focus_obj(target);
+            // 立即进入编辑模式
+            lv_group_set_editing(Win32Window.key_inputGroup, (c_bool1)1);
+        }
+
+        /// <summary>
+        /// 设置光标颜色
+        /// </summary>
+        public void set_cursor_color(int color)
+        {
+            lv_color_t lvColor = lv_color_hex((uint)color);
+            lv_obj_set_style_bg_color(Ptr, lvColor, (uint)(LV_PART_CURSOR | LV_STATE_FOCUSED));
+            lv_obj_set_style_bg_opa(Ptr, 255, (uint)(LV_PART_CURSOR | LV_STATE_FOCUSED));
+        }
+
+        /// <summary>
+        /// 设置文本内容
+        /// </summary>
+        public new void set_text(string text)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(text + "\0");
+            fixed (byte* ptr = utf8)
+            {
+                lv_textarea_set_text(Ptr, ptr);
+            }
+        }
+
+        /// <summary>
+        /// 获取文本内容
+        /// </summary>
+        public string get_text()
+        {
+            byte* textPtr = lv_textarea_get_text(Ptr);
+            if (textPtr == null) return string.Empty;
+            return Marshal.PtrToStringUTF8((IntPtr)textPtr) ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 设置单行模式
+        /// </summary>
+        public void set_one_line(bool enabled)
+        {
+            lv_textarea_set_one_line(Ptr, enabled ? (c_bool1)1 : (c_bool1)0);
+        }
+
+        /// <summary>
+        /// 获取是否为单行模式
+        /// </summary>
+        public bool get_one_line()
+        {
+            return lv_textarea_get_one_line(Ptr) != 0;
+        }
+
+        /// <summary>
+        /// 添加文本到 textarea
+        /// </summary>
+        public void add_text(string text)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(text + "\0");
+            fixed (byte* ptr = utf8)
+            {
+                lv_textarea_add_text(Ptr, ptr);
+            }
+        }
+
+        /// <summary>
+        /// 添加单个字符到 textarea
+        /// </summary>
+        public void add_char(int c)
+        {
+            lv_textarea_add_char(Ptr, (uint)c);
+        }
+
+        /// <summary>
+        /// 设置占位符文本
+        /// </summary>
+        public void set_placeholder_text(string text)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(text + "\0");
+            fixed (byte* ptr = utf8)
+            {
+                lv_textarea_set_placeholder_text(Ptr, ptr);
+            }
+        }
+
+        /// <summary>
+        /// 获取占位符文本
+        /// </summary>
+        public string get_placeholder_text()
+        {
+            byte* textPtr = lv_textarea_get_placeholder_text(Ptr);
+            if (textPtr == null) return string.Empty;
+            return Marshal.PtrToStringUTF8((IntPtr)textPtr) ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 设置光标位置
+        /// </summary>
+        public void set_cursor_pos(int pos)
+        {
+            lv_textarea_set_cursor_pos(Ptr, pos);
+        }
+
+        /// <summary>
+        /// 获取光标位置
+        /// </summary>
+        public int get_cursor_pos()
+        {
+            return (int)lv_textarea_get_cursor_pos(Ptr);
+        }
+
+        /// <summary>
+        /// 设置是否启用点击光标定位
+        /// </summary>
+        public void set_cursor_click_pos(bool enabled)
+        {
+            lv_textarea_set_cursor_click_pos(Ptr, enabled ? (c_bool1)1 : (c_bool1)0);
+        }
+
+        /// <summary>
+        /// 获取是否启用点击光标定位
+        /// </summary>
+        public bool get_cursor_click_pos()
+        {
+            return lv_textarea_get_cursor_click_pos(Ptr) != 0;
+        }
+
+        /// <summary>
+        /// 设置密码模式
+        /// </summary>
+        public void set_password_mode(bool enabled)
+        {
+            lv_textarea_set_password_mode(Ptr, enabled ? (c_bool1)1 : (c_bool1)0);
+        }
+
+        /// <summary>
+        /// 获取是否为密码模式
+        /// </summary>
+        public bool get_password_mode()
+        {
+            return lv_textarea_get_password_mode(Ptr) != 0;
+        }
+
+        /// <summary>
+        /// 设置密码显示字符
+        /// </summary>
+        public void set_password_bullet(string bullet)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(bullet + "\0");
+            fixed (byte* ptr = utf8)
+            {
+                lv_textarea_set_password_bullet(Ptr, ptr);
+            }
+        }
+
+        /// <summary>
+        /// 获取密码显示字符
+        /// </summary>
+        public string get_password_bullet()
+        {
+            byte* bulletPtr = lv_textarea_get_password_bullet(Ptr);
+            if (bulletPtr == null) return string.Empty;
+            return Marshal.PtrToStringUTF8((IntPtr)bulletPtr) ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 设置密码显示时间（毫秒）
+        /// </summary>
+        public void set_password_show_time(int time)
+        {
+            lv_textarea_set_password_show_time(Ptr, (uint)time);
+        }
+
+        /// <summary>
+        /// 获取密码显示时间（毫秒）
+        /// </summary>
+        public int get_password_show_time()
+        {
+            return (int)lv_textarea_get_password_show_time(Ptr);
+        }
+
+        /// <summary>
+        /// 设置接受的字符列表（需要保持缓冲区不被 GC 回收）
+        /// </summary>
+        public void set_accepted_chars(string chars)
+        {
+            // 释放之前的缓冲区
+            if (_acceptedCharsHandle.IsAllocated)
+            {
+                _acceptedCharsHandle.Free();
+            }
+            
+            // 创建新的缓冲区并固定它
+            _acceptedCharsBuffer = Encoding.UTF8.GetBytes(chars + "\0");
+            _acceptedCharsHandle = GCHandle.Alloc(_acceptedCharsBuffer, GCHandleType.Pinned);
+            
+            lv_textarea_set_accepted_chars(Ptr, (byte*)_acceptedCharsHandle.AddrOfPinnedObject());
+        }
+
+        /// <summary>
+        /// 获取接受的字符列表
+        /// </summary>
+        public string get_accepted_chars()
+        {
+            byte* charsPtr = lv_textarea_get_accepted_chars(Ptr);
+            if (charsPtr == null) return string.Empty;
+            return Marshal.PtrToStringUTF8((IntPtr)charsPtr) ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 设置最大长度
+        /// </summary>
+        public void set_max_length(int length)
+        {
+            lv_textarea_set_max_length(Ptr, (uint)length);
+        }
+
+        /// <summary>
+        /// 获取最大长度
+        /// </summary>
+        public int get_max_length()
+        {
+            return (int)lv_textarea_get_max_length(Ptr);
+        }
+
+        /// <summary>
+        /// 设置插入替换文本
+        /// </summary>
+        public void set_insert_replace(string txt)
+        {
+            byte[] utf8 = Encoding.UTF8.GetBytes(txt + "\0");
+            fixed (byte* ptr = utf8)
+            {
+                lv_textarea_set_insert_replace(Ptr, ptr);
+            }
+        }
+
+        /// <summary>
+        /// 设置是否启用文本选择
+        /// </summary>
+        public void set_text_selection(bool enabled)
+        {
+            lv_textarea_set_text_selection(Ptr, enabled ? (c_bool1)1 : (c_bool1)0);
+        }
+
+        /// <summary>
+        /// 获取是否启用文本选择
+        /// </summary>
+        public bool get_text_selection()
+        {
+            return lv_textarea_get_text_selection(Ptr) != 0;
+        }
+
+        /// <summary>
+        /// 检查是否有文本被选中
+        /// </summary>
+        public bool text_is_selected()
+        {
+            return lv_textarea_text_is_selected(Ptr) != 0;
+        }
+
+        /// <summary>
+        /// 清除文本选择
+        /// </summary>
+        public void clear_selection()
+        {
+            lv_textarea_clear_selection(Ptr);
+        }
+
+        /// <summary>
+        /// 删除光标前的字符
+        /// </summary>
+        public void delete_char()
+        {
+            lv_textarea_delete_char(Ptr);
+        }
+
+        /// <summary>
+        /// 删除光标后的字符
+        /// </summary>
+        public void delete_char_forward()
+        {
+            lv_textarea_delete_char_forward(Ptr);
+        }
+
+        /// <summary>
+        /// 光标向右移动
+        /// </summary>
+        public void cursor_right()
+        {
+            lv_textarea_cursor_right(Ptr);
+        }
+
+        /// <summary>
+        /// 光标向左移动
+        /// </summary>
+        public void cursor_left()
+        {
+            lv_textarea_cursor_left(Ptr);
+        }
+
+        /// <summary>
+        /// 光标向下移动
+        /// </summary>
+        public void cursor_down()
+        {
+            lv_textarea_cursor_down(Ptr);
+        }
+
+        /// <summary>
+        /// 光标向上移动
+        /// </summary>
+        public void cursor_up()
+        {
+            lv_textarea_cursor_up(Ptr);
+        }
+
+        /// <summary>
+        /// 设置文本对齐方式
+        /// </summary>
+        public void set_align(int align)
+        {
+            lv_textarea_set_align(Ptr, (lv_text_align_t)align);
+        }
+
+        /// <summary>
+        /// 获取当前光标位置的字符
+        /// </summary>
+        public int get_current_char()
+        {
+            return (int)lv_textarea_get_current_char(Ptr);
+        }
+
+        /// <summary>
+        /// 获取关联的 label 对象
+        /// </summary>
+        public LvObjWrapper get_label()
+        {
+            lv_obj_t* labelPtr = lv_textarea_get_label(Ptr);
+            return new LvObjWrapper(labelPtr);
+        }
+    }
+
+    /// <summary>
     /// Wrapper class for lv_obj_t* to expose LVGL objects to Lua
     /// </summary>
     public unsafe class LvObjWrapper
@@ -823,6 +1251,38 @@ namespace VduEditorTestOne
                 Console.WriteLine($"[ERROR] add_flag failed: {ex.Message}");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// 添加状态
+        /// </summary>
+        public void add_state(int state)
+        {
+            lv_obj_add_state(Ptr, (ushort)state);
+        }
+
+        /// <summary>
+        /// 移除状态
+        /// </summary>
+        public void remove_state(int state)
+        {
+            lv_obj_remove_state(Ptr, (ushort)state);
+        }
+
+        /// <summary>
+        /// 将对象添加到键盘输入组
+        /// </summary>
+        public void add_to_group()
+        {
+            lv_group_add_obj(Win32Window.key_inputGroup, Ptr);
+        }
+
+        /// <summary>
+        /// 从键盘输入组移除对象
+        /// </summary>
+        public void remove_from_group()
+        {
+            lv_group_remove_obj(Ptr);
         }
 
         /// <summary>

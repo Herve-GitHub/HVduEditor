@@ -184,7 +184,7 @@ function PropertyArea:_create_content_area()
     self.content:set_style_border_width(0, 0)
     self.content:set_style_text_color(self.props.text_color, 0)
     self.content:set_style_pad_all(5, 0)
-    self.content:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 禁用滚动
+    self.content:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 启用滚动以支持更多内容
     self.content:remove_flag(lv.OBJ_FLAG_GESTURE_BUBBLE)  -- 禁用手势冒泡
     self.content:clear_layout()
 end
@@ -502,7 +502,12 @@ function PropertyArea:_create_properties_table(y_pos, widget_entry, meta)
     
     -- 遍历属性定义
     for _, prop_def in ipairs(meta.properties) do
+        
         local prop_name = prop_def.name
+        if prop_name == "design_mode" then
+            -- 跳过 design_mode 属性
+            goto continue
+        end
         local prop_label = prop_def.label or prop_name
         local prop_type = prop_def.type
         local prop_value = current_props[prop_name] or prop_def.default or ""
@@ -534,46 +539,73 @@ function PropertyArea:_create_properties_table(y_pos, widget_entry, meta)
             value_label:set_pos(95, y_pos)
         end
         y_pos = y_pos + item_height
+        ::continue::
     end
 end
 
 -- 创建文本输入框
 function PropertyArea:_create_text_input(prop_name, value, is_read_only, widget_entry, y_pos)
-    local input = lv.obj_create(self.content)
-    input:set_pos(95, y_pos + 2)
-    input:set_size(self.props.width - 105, 20)
-    input:set_style_bg_color(0x1E1E1E, 0)
-    input:set_style_border_width(1, 0)
-    input:set_style_border_color(0x555555, 0)
-    input:set_style_text_color(0xFFFFFF, 0)
-    input:set_style_pad_all(3, 0)
+    local textarea = lv.textarea_create(self.content)
+    textarea:set_pos(95, y_pos + 2)
+    textarea:set_size(self.props.width - 110, 22)
+    textarea:set_style_bg_color(0x1E1E1E, 0)
+    textarea:set_style_border_width(1, 0)
+    textarea:set_style_border_color(0x555555, 0)
+    textarea:set_style_text_color(0xFFFFFF, 0)
+    textarea:set_style_radius(0, 0)  -- 矩形，无圆角
+    textarea:set_style_pad_all(2, 0)
+    textarea:set_style_pad_left(4, 0)
+    textarea:set_one_line(true)  -- 单行模式
+    textarea:set_text(value)
+    textarea:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 单行模式不需要滚动
     
-    local label = lv.label_create(input)
-    label:set_text(value)
-    label:set_style_text_color(0xFFFFFF, 0)
-    
-    if not is_read_only then
-        input:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    if is_read_only then
+        textarea:add_state(lv.STATE_DISABLED)
+    else
+        -- 添加值变更事件回调
+        local this = self
+        textarea:add_event_cb(function(e)
+            local new_value = textarea:get_text()
+            if widget_entry.instance and widget_entry.instance.set_property then
+                widget_entry.instance:set_property(prop_name, new_value)
+            end
+            this:_emit("property_changed", prop_name, new_value, widget_entry)
+        end, lv.EVENT_VALUE_CHANGED, nil)
     end
 end
 
 -- 创建数字输入框
 function PropertyArea:_create_number_input(prop_name, value, min_val, max_val, is_read_only, widget_entry, y_pos)
-    local input = lv.obj_create(self.content)
-    input:set_pos(95, y_pos + 2)
-    input:set_size(self.props.width - 105, 20)
-    input:set_style_bg_color(0x1E1E1E, 0)
-    input:set_style_border_width(1, 0)
-    input:set_style_border_color(0x555555, 0)
-    input:set_style_text_color(0xFFFFFF, 0)
-    input:set_style_pad_all(3, 0)
+    local textarea = lv.textarea_create(self.content)
+    textarea:set_pos(95, y_pos + 2)
+    textarea:set_size(self.props.width - 110, 22)
+    textarea:set_style_bg_color(0x1E1E1E, 0)
+    textarea:set_style_border_width(1, 0)
+    textarea:set_style_border_color(0x555555, 0)
+    textarea:set_style_text_color(0xFFFFFF, 0)
+    textarea:set_style_radius(0, 0)  -- 矩形，无圆角
+    textarea:set_style_pad_all(2, 0)
+    textarea:set_style_pad_left(4, 0)
+    textarea:set_one_line(true)  -- 单行模式
+    textarea:set_text(tostring(math.floor(value)))
+    textarea:set_accepted_chars("0123456789-")  -- 只接受数字和负号
+    textarea:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 单行模式不需要滚动
     
-    local label = lv.label_create(input)
-    label:set_text(tostring(math.floor(value)))
-    label:set_style_text_color(0xFFFFFF, 0)
-    
-    if not is_read_only then
-        input:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    if is_read_only then
+        textarea:add_state(lv.STATE_DISABLED)
+    else
+        -- 添加值变更事件回调
+        local this = self
+        textarea:add_event_cb(function(e)
+            local new_value = tonumber(textarea:get_text()) or 0
+            -- 限制范围
+            if min_val and new_value < min_val then new_value = min_val end
+            if max_val and new_value > max_val then new_value = max_val end
+            if widget_entry.instance and widget_entry.instance.set_property then
+                widget_entry.instance:set_property(prop_name, new_value)
+            end
+            this:_emit("property_changed", prop_name, new_value, widget_entry)
+        end, lv.EVENT_VALUE_CHANGED, nil)
     end
 end
 
@@ -585,6 +617,9 @@ function PropertyArea:_create_checkbox_input(prop_name, value, is_read_only, wid
     checkbox:set_style_bg_color(value and 0x007ACC or 0x1E1E1E, 0)
     checkbox:set_style_border_width(1, 0)
     checkbox:set_style_border_color(0x555555, 0)
+    checkbox:set_style_radius(0, 0)  -- 矩形，无圆角
+    checkbox:set_style_pad_all(0, 0)  -- 移除内边距
+    checkbox:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 移除滚动条
     
     if not is_read_only then
         checkbox:add_flag(lv.OBJ_FLAG_CLICKABLE)
@@ -608,6 +643,9 @@ function PropertyArea:_create_color_input(prop_name, value, is_read_only, widget
     color_box:set_style_bg_color(color, 0)
     color_box:set_style_border_width(1, 0)
     color_box:set_style_border_color(0x555555, 0)
+    color_box:set_style_radius(0, 0)  -- 矩形，无圆角
+    color_box:set_style_pad_all(0, 0)  -- 移除内边距
+    color_box:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 移除滚动条
     
     if not is_read_only then
         color_box:add_flag(lv.OBJ_FLAG_CLICKABLE)
@@ -623,7 +661,9 @@ function PropertyArea:_create_enum_dropdown(prop_name, value, options, is_read_o
     dropdown:set_style_border_width(1, 0)
     dropdown:set_style_border_color(0x555555, 0)
     dropdown:set_style_text_color(0xFFFFFF, 0)
+    dropdown:set_style_radius(0, 0)  -- 矩形，无圆角
     dropdown:set_style_pad_all(3, 0)
+    dropdown:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 移除滚动条
     
     local label = lv.label_create(dropdown)
     label:set_text(tostring(value))
