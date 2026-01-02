@@ -1,7 +1,7 @@
 -- PropertyArea.lua
 -- 浮动属性窗口：样式参考属性窗口，但不包含工具列表内容
 local lv = require("lvgl")
-
+local gen = require("general")
 -- 获取屏幕
 local scr = lv.scr_act()
 
@@ -15,7 +15,6 @@ PropertyArea.__widget_meta = {
     schema_version = "1.0",
     version = "1.0",
 }
-local selectedItem = nil
 local selectedItems ={}
 -- 构造函数
 function PropertyArea.new(parent, props)
@@ -376,15 +375,14 @@ end
 function PropertyArea:onSelectedItem(item)
     if item == nil then
         print("[属性窗口] 取消选中控件")
-        selectedItem = nil
         selectedItems = {}
         return
     end
-    
+    gen.print_r(item)
     -- item 可能是单个 widget_entry 或多个 widget_entries 列表
     if type(item) == "table" and item.instance then
         -- 单个选中
-        selectedItem = item
+        selectedItems ={}
         selectedItems = { item }
         
         local instance = item.instance
@@ -408,8 +406,6 @@ function PropertyArea:onSelectedItem(item)
     elseif type(item) == "table" then
         -- 多个选中
         selectedItems = item
-        selectedItem = nil
-        
         print("[属性窗口] 多个控件已选中，共 " .. #item .. " 个")
         return nil
     end

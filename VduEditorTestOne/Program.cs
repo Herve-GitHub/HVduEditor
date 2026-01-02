@@ -137,7 +137,7 @@ namespace VduEditorTestOne
             lua["_lvgl_module.ALIGN_OUT_TOP_MID"] = (int)LV_ALIGN_OUT_TOP_MID;
             lua["_lvgl_module.ALIGN_OUT_TOP_RIGHT"] = (int)LV_ALIGN_OUT_TOP_RIGHT;
             lua["_lvgl_module.ALIGN_OUT_BOTTOM_LEFT"] = (int)LV_ALIGN_OUT_BOTTOM_LEFT;
-            lua["_lvgl_module.ALIGN_OUT_BOTTOM_MID"] = (int)LV_ALIGN_OUT_BOTTOM_MID;
+            lua["_lvgl_module ALIGN_OUT_BOTTOM_MID"] = (int)LV_ALIGN_OUT_BOTTOM_MID;
             lua["_lvgl_module.ALIGN_OUT_BOTTOM_RIGHT"] = (int)LV_ALIGN_OUT_BOTTOM_RIGHT;
             lua["_lvgl_module.ALIGN_OUT_LEFT_TOP"] = (int)LV_ALIGN_OUT_LEFT_TOP;
             lua["_lvgl_module.ALIGN_OUT_LEFT_MID"] = (int)LV_ALIGN_OUT_LEFT_MID;
@@ -296,29 +296,47 @@ namespace VduEditorTestOne
 
         public static LvTimerWrapper LuaTimerCreate(LuaFunction callback, int periodMs)
         {
-            var timerData = new TimerCallbackData { Callback = callback };
-            _timerCallbacks.Add(timerData);
-            GCHandle handle = GCHandle.Alloc(timerData);
+            try
+            {
+                var timerData = new TimerCallbackData { Callback = callback };
+                _timerCallbacks.Add(timerData);
+                GCHandle handle = GCHandle.Alloc(timerData);
 
-            lv_timer_t* timer = lv_timer_create(&LuaTimerHandler, (uint)periodMs, (void*)GCHandle.ToIntPtr(handle));
-            timerData.Timer = timer;
-            return new LvTimerWrapper(timer, handle);
+                lv_timer_t* timer = lv_timer_create(&LuaTimerHandler, (uint)periodMs, (void*)GCHandle.ToIntPtr(handle));
+                timerData.Timer = timer;
+                return new LvTimerWrapper(timer, handle);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] LuaTimerCreate failed: {ex.Message}");
+                Console.WriteLine($"[ERROR] StackTrace: {ex.StackTrace}");
+                throw;
+            }
         }
 
         public static void LuaTimerDelete(LvTimerWrapper timerWrapper)
         {
-            if (timerWrapper != null && timerWrapper.Ptr != null)
+            try
             {
-                lv_timer_delete(timerWrapper.Ptr);
-                if (timerWrapper.Handle.IsAllocated)
+                if (timerWrapper != null && timerWrapper.Ptr != null)
                 {
-                    var data = timerWrapper.Handle.Target as TimerCallbackData;
-                    if (data != null)
+                    lv_timer_delete(timerWrapper.Ptr);
+                    if (timerWrapper.Handle.IsAllocated)
                     {
-                        _timerCallbacks.Remove(data);
+                        var data = timerWrapper.Handle.Target as TimerCallbackData;
+                        if (data != null)
+                        {
+                            _timerCallbacks.Remove(data);
+                        }
+                        timerWrapper.Handle.Free();
                     }
-                    timerWrapper.Handle.Free();
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] LuaTimerDelete failed: {ex.Message}");
+                Console.WriteLine($"[ERROR] StackTrace: {ex.StackTrace}");
+                throw;
             }
         }
 
@@ -353,21 +371,39 @@ namespace VduEditorTestOne
 
         public static void LuaObjAddEventCb(LvObjWrapper obj, LuaFunction callback, int eventCode, object? userData)
         {
-            var callbackData = new EventCallbackData 
-            { 
-                Callback = callback, 
-                UserData = userData,
-                ObjWrapper = obj
-            };
-            _eventCallbacks.Add(callbackData);
-            GCHandle handle = GCHandle.Alloc(callbackData);
+            try
+            {
+                var callbackData = new EventCallbackData 
+                { 
+                    Callback = callback, 
+                    UserData = userData,
+                    ObjWrapper = obj
+                };
+                _eventCallbacks.Add(callbackData);
+                GCHandle handle = GCHandle.Alloc(callbackData);
 
-            lv_obj_add_event_cb(obj.Ptr, &LuaEventHandler, (lv_event_code_t)eventCode, (void*)GCHandle.ToIntPtr(handle));
+                lv_obj_add_event_cb(obj.Ptr, &LuaEventHandler, (lv_event_code_t)eventCode, (void*)GCHandle.ToIntPtr(handle));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] LuaObjAddEventCb failed: {ex.Message}");
+                Console.WriteLine($"[ERROR] StackTrace: {ex.StackTrace}");
+                throw;
+            }
         }
 
         public static int LuaEventGetCode(LvEventData eventData)
         {
-            return eventData.get_code();
+            try
+            {
+                return eventData.get_code();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] LuaEventGetCode failed: {ex.Message}");
+                Console.WriteLine($"[ERROR] StackTrace: {ex.StackTrace}");
+                throw;
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -700,7 +736,15 @@ namespace VduEditorTestOne
 
         public void set_size(int width, int height)
         {
-            lv_obj_set_size(Ptr, width, height);
+            try
+            {
+                lv_obj_set_size(Ptr, width, height);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] set_size failed: {ex.Message}");
+                throw;
+            }
         }
 
         public void set_width(int width)
@@ -715,7 +759,15 @@ namespace VduEditorTestOne
 
         public void set_pos(int x, int y)
         {
-            lv_obj_set_pos(Ptr, x, y);
+            try
+            {
+                lv_obj_set_pos(Ptr, x, y);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] set_pos failed: {ex.Message}");
+                throw;
+            }
         }
 
         public void set_text(string text)
@@ -749,12 +801,28 @@ namespace VduEditorTestOne
 
         public void remove_flag(int flag)
         {
-            lv_obj_remove_flag(Ptr, (lv_obj_flag_t)flag);
+            try
+            {
+                lv_obj_remove_flag(Ptr, (lv_obj_flag_t)flag);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] remove_flag failed: {ex.Message}");
+                throw;
+            }
         }
 
         public void add_flag(int flag)
         {
-            lv_obj_add_flag(Ptr, (lv_obj_flag_t)flag);
+            try
+            {
+                lv_obj_add_flag(Ptr, (lv_obj_flag_t)flag);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] add_flag failed: {ex.Message}");
+                throw;
+            }
         }
 
         /// <summary>
@@ -770,15 +838,31 @@ namespace VduEditorTestOne
         /// </summary>
         public void clear_layout()
         {
-            lv_obj_set_layout(Ptr, (uint)lv_layout_t.LV_LAYOUT_NONE);
+            try
+            {
+                lv_obj_set_layout(Ptr, (uint)lv_layout_t.LV_LAYOUT_NONE);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] clear_layout failed: {ex.Message}");
+                throw;
+            }
         }
 
         // ========== Style methods ==========
 
         public void set_style_bg_color(int color, int selector)
         {
-            lv_color_t lvColor = lv_color_hex((uint)color);
-            lv_obj_set_style_bg_color(Ptr, lvColor, (uint)selector);
+            try
+            {
+                lv_color_t lvColor = lv_color_hex((uint)color);
+                lv_obj_set_style_bg_color(Ptr, lvColor, (uint)selector);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] set_style_bg_color failed: {ex.Message}");
+                throw;
+            }
         }
 
         public void set_style_bg_opa(int opa, int selector)
@@ -871,7 +955,15 @@ namespace VduEditorTestOne
 
         public void add_event_cb(LuaFunction callback, int eventCode, object? userData)
         {
-            Program.LuaObjAddEventCb(this, callback, eventCode, userData);
+            try
+            {
+                Program.LuaObjAddEventCb(this, callback, eventCode, userData);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] add_event_cb failed: {ex.Message}");
+                throw;
+            }
         }
     }
 }
