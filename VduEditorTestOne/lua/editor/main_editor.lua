@@ -1,11 +1,13 @@
 ﻿-- main_editor.lua
 -- 主编辑器入口：整合菜单栏、画布、工具箱
 local lv = require("lvgl")
+local gen = require("general")
 
 -- 加载编辑器组件
 local MenuBar = require("MenuBar")
 local CanvasArea = require("CanvasArea")
 local ToolsBox = require("tools_box")
+local PropertyArea = require("PropertyArea")
 
 -- 获取屏幕
 local scr = lv.scr_act()
@@ -54,18 +56,18 @@ local canvas = CanvasArea.new(scr, {
 
 -- ========== 创建浮动工具箱（在画布上方）==========
 local toolbox = ToolsBox.new(scr, {
-    x = 10,
+    x = 850,
     y = MENUBAR_HEIGHT + 10,
     width = 130,
 })
 
 -- 创建属性窗口
-local PropertyArea = require("PropertyArea")
+
 local property_area = PropertyArea.new(scr, {
-    x = 700,
+    x = 1024,
     y = MENUBAR_HEIGHT + 10,
     width = 300,
-    visible = true,
+    visible = true
 })
 
 -- 同步菜单栏状态与画布/工具箱/属性窗口状态

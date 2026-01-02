@@ -40,7 +40,7 @@ namespace VduEditorTestOne
             }
 
             // Initialize window
-            _window = new Win32Window("LVGL Lua Demo", 1024, 810);
+            _window = new Win32Window("LVGL Lua Demo", 1360, 810);
             _window.Init();
             var font = lv_obj_get_style_text_font(Win32Window.root, LV_PART_MAIN);
             defaultFontStyle = (lv_style_t*)NativeMemory.Alloc((nuint)sizeof(lv_style_t));
@@ -353,7 +353,7 @@ namespace VduEditorTestOne
                 var cb = data.Callback;
                 _pendingActions.Enqueue(() =>
                 {
-                    Console.WriteLine($"[PendingAction][Timer] Start callback: {cb}");
+                    //Console.WriteLine($"[PendingAction][Timer] Start callback: {cb}");
                     try
                     {
                         cb.Call();
@@ -362,7 +362,7 @@ namespace VduEditorTestOne
                     {
                         Console.WriteLine($"Lua timer callback error: {ex.Message}");
                     }
-                    Console.WriteLine($"[PendingAction][Timer] End callback: {cb}");
+                    //Console.WriteLine($"[PendingAction][Timer] End callback: {cb}");
                 });
             }
         }
@@ -426,7 +426,7 @@ namespace VduEditorTestOne
                 // Enqueue an action that logs start/end and invokes the Lua callback
                 _pendingActions.Enqueue(() =>
                 {
-                    Console.WriteLine($"[PendingAction][Event] Start - event:{eventCode} target:{targetPtr} callback:{cb}");
+                    //Console.WriteLine($"[PendingAction][Event] Start - event:{eventCode} target:{targetPtr} callback:{cb}");
                     try
                     {
                         cb.Call(new LvEventData(eventCode, targetPtr));
@@ -435,7 +435,7 @@ namespace VduEditorTestOne
                     {
                         Console.WriteLine($"Lua event callback error: {ex.Message}");
                     }
-                    Console.WriteLine($"[PendingAction][Event] End - event:{eventCode} callback:{cb}");
+                    //Console.WriteLine($"[PendingAction][Event] End - event:{eventCode} callback:{cb}");
                 });
             }
         }

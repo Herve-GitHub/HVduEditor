@@ -18,6 +18,7 @@ PropertyArea.__widget_meta = {
 local selectedItems ={}
 -- 构造函数
 function PropertyArea.new(parent, props)
+    
     props = props or {}
     local self = setmetatable({}, PropertyArea)
     
@@ -66,7 +67,7 @@ function PropertyArea.new(parent, props)
         start_mouse_x = 0,
         start_mouse_y = 0,
     }
-    self._content_height = 200  -- 内容区域高度（可根据需要调整）
+    self._content_height = 600  -- 内容区域高度（可根据需要调整）
     -- 创建主容器（浮动窗口样式）
     self.container = lv.obj_create(parent)
     self.container:set_pos(self.props.x, self.props.y)
@@ -178,12 +179,13 @@ end
 function PropertyArea:_create_content_area()
     self.content = lv.obj_create(self.container)
     self.content:set_pos(0, self.props.title_height)
-    self.content:set_size(self.props.width, self._content_height)
+    self.content:set_size(self.props.width, self._content_height - self.props.title_height)
     self.content:set_style_bg_opa(0, 0)
     self.content:set_style_border_width(0, 0)
     self.content:set_style_text_color(self.props.text_color, 0)
-    self.content:set_style_pad_all(0, 0)
-    self.content:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
+    self.content:set_style_pad_all(5, 0)
+    self.content:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 禁用滚动
+    self.content:remove_flag(lv.OBJ_FLAG_GESTURE_BUBBLE)  -- 禁用手势冒泡
     self.content:clear_layout()
 end
 
@@ -376,38 +378,260 @@ function PropertyArea:onSelectedItem(item)
     if item == nil then
         print("[属性窗口] 取消选中控件")
         selectedItems = {}
+        self:_clear_content_area()
         return
     end
-    gen.print_r(item)
+    
     -- item 可能是单个 widget_entry 或多个 widget_entries 列表
     if type(item) == "table" and item.instance then
         -- 单个选中
-        selectedItems ={}
+        selectedItems = {}
         selectedItems = { item }
+        self:_display_widget_properties(item)
         
-        local instance = item.instance
-        if not instance then
-            print("[属性窗口] 错误：选中项没有 instance")
-            return
-        end
-        
-        -- 调用实例的 get_properties 方法获取属性
-        if instance.get_properties then
-            local properties = instance:get_properties()
-            print("[属性窗口] 选中控件属性:")
-            for key, value in pairs(properties) do
-                print("  " .. key .. " = " .. tostring(value))
-            end
-            return properties
-        else
-            print("[属性窗口] 错误：实例没有 get_properties 方法")
-            return nil
-        end
     elseif type(item) == "table" then
-        -- 多个选中
+        -- 多个选中，显示第一个
         selectedItems = item
-        print("[属性窗口] 多个控件已选中，共 " .. #item .. " 个")
-        return nil
+        if #item > 0 then
+            print("[属性窗口] 多个控件已选中，共 " .. #item .. " 个，显示第一个")
+            self:_display_widget_properties(item[1])
+        end
     end
 end
+
+-- 清空内容区域
+function PropertyArea:_clear_content_area()
+    local child_count = self.content:get_child_count()
+    for i = child_count - 1, 0, -1 do
+        local child = self.content:get_child(i)
+        if child then
+            child:delete()
+        end
+    end
+end
+
+-- 显示控件属性
+function PropertyArea:_display_widget_properties(widget_entry)
+    self:_clear_content_area()
+    
+    local instance = widget_entry.instance
+    local module = widget_entry.module
+    
+    if not instance or not module then
+        print("[属性窗口] 错误：instance 或 module 为空")
+        return
+    end
+    
+    -- 获取元数据
+    local meta = module.__widget_meta
+    if not meta then
+        print("[属性窗口] 错误：模块没有 __widget_meta")
+        return
+    end
+    
+    -- 显示第一个表：元数据信息（不可修改）
+    local y_pos = self:_create_metadata_table(meta)
+    
+    -- 显示第二个表：属性编辑表（可修改）
+    self:_create_properties_table(y_pos,widget_entry, meta)
+end
+
+-- 创建元数据表（不可修改）
+function PropertyArea:_create_metadata_table(meta)
+    local y_pos = 0
+    local table_title_height = 20
+    
+    -- 表标题
+    local title = lv.label_create(self.content)
+    title:set_text("基本信息")
+    title:set_style_text_color(0x007ACC, 0)
+    title:set_pos(5, y_pos)
+    y_pos = y_pos + table_title_height
+    
+    -- 元数据字段列表
+    local meta_fields = {
+        { key = "id", label = "ID: " },
+        { key = "name", label = "名称: " },
+        { key = "description", label = "描述: " },
+        { key = "schema_version", label = "Schema: " },
+        { key = "version", label = "版本: " },
+    }
+    
+    local item_height = 20
+    for _, field in ipairs(meta_fields) do
+        local value = meta[field.key] or ""
+        local field_height = 18
+        
+        -- 创建标签
+        local label = lv.label_create(self.content)
+        label:set_text(field.label .. tostring(value))
+        label:set_style_text_color(0xCCCCCC, 0)
+        label:set_pos(10, y_pos)
+        y_pos = y_pos + field_height
+    end
+    
+    y_pos = y_pos + 10
+    return y_pos
+end
+
+-- 创建属性编辑表（可修改）
+function PropertyArea:_create_properties_table(y_pos, widget_entry, meta)
+    local instance = widget_entry.instance
+    local module = widget_entry.module
+    
+    if not meta.properties then
+        print("[属性窗口] 模块没有 properties 定义")
+        return
+    end
+    
+    -- 获取当前实例的属性值
+    local current_props = {}
+    if instance.get_properties then
+        current_props = instance:get_properties()
+    end
+    
+    local table_title_height = 20
+    local item_height = 24
+    
+    -- 表标题
+    local title = lv.label_create(self.content)
+    title:set_text("属性编辑")
+    title:set_style_text_color(0x00CC00, 0)
+    title:set_pos(0, y_pos)
+    y_pos = y_pos + table_title_height + 5
+    
+    -- 遍历属性定义
+    for _, prop_def in ipairs(meta.properties) do
+        local prop_name = prop_def.name
+        local prop_label = prop_def.label or prop_name
+        local prop_type = prop_def.type
+        local prop_value = current_props[prop_name] or prop_def.default or ""
+        local is_read_only = prop_def.read_only or false
+        
+        -- 创建标签（属性名）
+        local label = lv.label_create(self.content)
+        label:set_text(prop_label .. ": ")
+        label:set_style_text_color(0xCCCCCC, 0)
+        label:set_pos(5, y_pos)
+        label:set_width(80)
+        
+        -- 根据类型创建编辑控件
+        if prop_type == "string" then
+            self:_create_text_input(prop_name, tostring(prop_value), is_read_only, widget_entry, y_pos)
+        elseif prop_type == "number" then
+            self:_create_number_input(prop_name, tonumber(prop_value) or 0, prop_def.min, prop_def.max, is_read_only, widget_entry, y_pos)
+        elseif prop_type == "boolean" then
+            self:_create_checkbox_input(prop_name, prop_value, is_read_only, widget_entry, y_pos)
+        elseif prop_type == "color" then
+            self:_create_color_input(prop_name, prop_value, is_read_only, widget_entry, y_pos)
+        elseif prop_type == "enum" then
+            self:_create_enum_dropdown(prop_name, prop_value, prop_def.options, is_read_only, widget_entry, y_pos)
+        else
+            -- 默认为只读文本显示
+            local value_label = lv.label_create(self.content)
+            value_label:set_text(tostring(prop_value))
+            value_label:set_style_text_color(0xFFFFFF, 0)
+            value_label:set_pos(95, y_pos)
+        end
+        y_pos = y_pos + item_height
+    end
+end
+
+-- 创建文本输入框
+function PropertyArea:_create_text_input(prop_name, value, is_read_only, widget_entry, y_pos)
+    local input = lv.obj_create(self.content)
+    input:set_pos(95, y_pos + 2)
+    input:set_size(self.props.width - 105, 20)
+    input:set_style_bg_color(0x1E1E1E, 0)
+    input:set_style_border_width(1, 0)
+    input:set_style_border_color(0x555555, 0)
+    input:set_style_text_color(0xFFFFFF, 0)
+    input:set_style_pad_all(3, 0)
+    
+    local label = lv.label_create(input)
+    label:set_text(value)
+    label:set_style_text_color(0xFFFFFF, 0)
+    
+    if not is_read_only then
+        input:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    end
+end
+
+-- 创建数字输入框
+function PropertyArea:_create_number_input(prop_name, value, min_val, max_val, is_read_only, widget_entry, y_pos)
+    local input = lv.obj_create(self.content)
+    input:set_pos(95, y_pos + 2)
+    input:set_size(self.props.width - 105, 20)
+    input:set_style_bg_color(0x1E1E1E, 0)
+    input:set_style_border_width(1, 0)
+    input:set_style_border_color(0x555555, 0)
+    input:set_style_text_color(0xFFFFFF, 0)
+    input:set_style_pad_all(3, 0)
+    
+    local label = lv.label_create(input)
+    label:set_text(tostring(math.floor(value)))
+    label:set_style_text_color(0xFFFFFF, 0)
+    
+    if not is_read_only then
+        input:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    end
+end
+
+-- 创建复选框
+function PropertyArea:_create_checkbox_input(prop_name, value, is_read_only, widget_entry, y_pos)
+    local checkbox = lv.obj_create(self.content)
+    checkbox:set_pos(95, y_pos + 2)
+    checkbox:set_size(20, 20)
+    checkbox:set_style_bg_color(value and 0x007ACC or 0x1E1E1E, 0)
+    checkbox:set_style_border_width(1, 0)
+    checkbox:set_style_border_color(0x555555, 0)
+    
+    if not is_read_only then
+        checkbox:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    end
+end
+
+-- 创建颜色选择框
+function PropertyArea:_create_color_input(prop_name, value, is_read_only, widget_entry, y_pos)
+    local color_box = lv.obj_create(self.content)
+    color_box:set_pos(95, y_pos + 2)
+    color_box:set_size(40, 20)
+    
+    -- 解析颜色值
+    local color = 0x007ACC
+    if type(value) == "number" then
+        color = value
+    elseif type(value) == "string" and value:match("^#%x%x%x%x%x%x$") then
+        color = tonumber(value:sub(2), 16)
+    end
+    
+    color_box:set_style_bg_color(color, 0)
+    color_box:set_style_border_width(1, 0)
+    color_box:set_style_border_color(0x555555, 0)
+    
+    if not is_read_only then
+        color_box:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    end
+end
+
+-- 创建枚举下拉框
+function PropertyArea:_create_enum_dropdown(prop_name, value, options, is_read_only, widget_entry, y_pos)
+    local dropdown = lv.obj_create(self.content)
+    dropdown:set_pos(95, y_pos + 2)
+    dropdown:set_size(self.props.width - 105, 20)
+    dropdown:set_style_bg_color(0x1E1E1E, 0)
+    dropdown:set_style_border_width(1, 0)
+    dropdown:set_style_border_color(0x555555, 0)
+    dropdown:set_style_text_color(0xFFFFFF, 0)
+    dropdown:set_style_pad_all(3, 0)
+    
+    local label = lv.label_create(dropdown)
+    label:set_text(tostring(value))
+    label:set_style_text_color(0xFFFFFF, 0)
+    
+    if not is_read_only then
+        dropdown:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    end
+end
+
 return PropertyArea
