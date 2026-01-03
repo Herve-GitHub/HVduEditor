@@ -18,6 +18,7 @@ ToolsBox.DEFAULT_TOOLS = {
     { id = "button", name = "按钮", icon = "BTN", module_path = "widgets.button" },
     { id = "valve", name = "阀门", icon = "VLV", module_path = "widgets.valve" },
     { id = "trend_chart", name = "趋势图", icon = "CHT", module_path = "widgets.trend_chart" },
+    { id = "status_bar", name = "状态栏", icon = "STA", module_path = "widgets.status_bar" },
 }
 
 -- 构造函数
@@ -36,7 +37,7 @@ function ToolsBox.new(parent, props)
         title_bg_color = props.title_bg_color or 0x3D3D3D,
         border_color = props.border_color or 0x555555,
         text_color = props.text_color or 0xFFFFFF,
-        visible = props.visible or false,
+        visible = props.visible ~= false,  -- 默认显示
         collapsed = props.collapsed or false,  -- 折叠状态
     }
     

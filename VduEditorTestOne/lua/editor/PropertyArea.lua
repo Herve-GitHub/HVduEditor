@@ -561,6 +561,9 @@ function PropertyArea:_create_text_input(prop_name, value, is_read_only, widget_
     textarea:set_text(value)
     textarea:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 单行模式不需要滚动
     
+    -- 启用键盘输入
+    --textarea:enable_keyboard_input()
+    
     if is_read_only then
         textarea:add_state(lv.STATE_DISABLED)
     else
@@ -592,6 +595,9 @@ function PropertyArea:_create_number_input(prop_name, value, min_val, max_val, i
     textarea:set_text(tostring(math.floor(value)))
     textarea:set_accepted_chars("0123456789-")  -- 只接受数字和负号
     textarea:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 单行模式不需要滚动
+    
+    -- 启用键盘输入
+    --textarea:enable_keyboard_input()
     
     if is_read_only then
         textarea:add_state(lv.STATE_DISABLED)
@@ -690,6 +696,9 @@ function PropertyArea:_create_color_input(prop_name, value, is_read_only, widget
     textarea:set_accepted_chars("#0123456789ABCDEFabcdef")  -- 只接受十六进制字符
     textarea:set_max_length(7)  -- #RRGGBB 共7个字符
     textarea:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
+    
+    -- 启用键盘输入
+    --textarea:enable_keyboard_input()
     
     if is_read_only then
         textarea:add_state(lv.STATE_DISABLED)

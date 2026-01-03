@@ -16,8 +16,8 @@ namespace VduEditorTestOne
         static List<TimerCallbackData> _timerCallbacks = new();
         static lv_style_t* defaultFontStyle = null;
         
-        // 用于延迟处理事件的队列
-        static ConcurrentQueue<Action> _pendingActions = new();
+        // 用于延迟处理事件的队列（internal 以便 LvTextareaWrapper 可以访问）
+        internal static ConcurrentQueue<Action> _pendingActions = new();
         
         static void Main(string[] args)
         {
@@ -82,21 +82,64 @@ namespace VduEditorTestOne
             _lua.Dispose();
         }
         
+        // 标记是否正在处理 pending actions，防止嵌套调用
+        static bool _isProcessingActions = false;
+        
+        // 用于跟踪连续空闲帧数，避免频繁检查
+        static int _emptyFrameCount = 0;
+        
         /// <summary>
         /// 在主循环中安全地处理延迟的事件回调
         /// </summary>
         static void ProcessPendingActions()
         {
-            while (_pendingActions.TryDequeue(out var action))
+            // 防止嵌套调用导致的死循环
+            if (_isProcessingActions)
             {
-                try
+                return;
+            }
+            
+            // 如果队列为空，快速返回
+            if (_pendingActions.IsEmpty)
+            {
+                _emptyFrameCount++;
+                return;
+            }
+            
+            _emptyFrameCount = 0;
+            _isProcessingActions = true;
+            
+            try
+            {
+                // 获取当前队列中的 action 数量快照，只处理这些
+                // 这样可以避免处理过程中新加入的 action 导致无限循环
+                int currentCount = _pendingActions.Count;
+                int maxActionsPerFrame = Math.Min(currentCount, 20); // 每帧最多处理20个
+                int processedCount = 0;
+                
+                while (processedCount < maxActionsPerFrame && _pendingActions.TryDequeue(out var action))
                 {
-                    action();
+                    processedCount++;
+                    try
+                    {
+                        action();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error processing pending action: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+                
+                // 如果队列积压过多，输出警告
+                int remaining = _pendingActions.Count;
+                if (remaining > 100)
                 {
-                    Console.WriteLine($"Error processing pending action: {ex.Message}");
+                    Console.WriteLine($"[WARNING] Pending actions queue backlog: {remaining} actions waiting");
                 }
+            }
+            finally
+            {
+                _isProcessingActions = false;
             }
         }
 
@@ -614,9 +657,6 @@ namespace VduEditorTestOne
         
         public LvTextareaWrapper(lv_obj_t* ptr) : base(ptr) 
         {
-            // 自动将 textarea 添加到键盘输入组，以便接收键盘输入
-            lv_group_add_obj(Win32Window.key_inputGroup, ptr);
-            
             // 启用点击光标定位
             lv_textarea_set_cursor_click_pos(ptr, (c_bool1)1);
             
@@ -628,13 +668,32 @@ namespace VduEditorTestOne
             lv_obj_set_style_bg_color(ptr, cursorColor, (uint)(LV_PART_CURSOR | LV_STATE_FOCUSED));
             lv_obj_set_style_bg_opa(ptr, 255, (uint)(LV_PART_CURSOR | LV_STATE_FOCUSED));
             
-            // 添加聚焦事件回调，用于设置 IME 候选框位置，并自动进入编辑模式
-            lv_obj_add_event_cb(ptr, &OnTextareaFocused, LV_EVENT_FOCUSED, null);
-            
-            // 添加 PRESSED 事件回调，确保按下时立即将焦点设置到该 textarea
-            lv_obj_add_event_cb(ptr, &OnTextareaPressed, LV_EVENT_PRESSED, null);
-            
-            Console.WriteLine($"[LvTextareaWrapper] Created textarea at 0x{(IntPtr)ptr:X}, added to group, cursor_click_pos enabled");
+            // 自动添加到键盘输入组并注册事件（延迟执行，避免在事件处理过程中操作）
+            var ptrCopy = ptr;
+            Program._pendingActions.Enqueue(() =>
+            {
+                // 添加到键盘输入组
+                lv_group_add_obj(Win32Window.key_inputGroup, ptrCopy);
+                
+                // 添加聚焦事件回调，用于设置 IME 候选框位置，并自动进入编辑模式
+                lv_obj_add_event_cb(ptrCopy, &OnTextareaFocused, LV_EVENT_FOCUSED, null);
+                
+                // 添加 PRESSED 事件回调，确保按下时立即将焦点设置到该 textarea
+                lv_obj_add_event_cb(ptrCopy, &OnTextareaPressed, LV_EVENT_PRESSED, null);
+                
+                Console.WriteLine($"[LvTextareaWrapper] Auto-enabled keyboard input for textarea at 0x{(IntPtr)ptrCopy:X}");
+            });
+        }
+        
+        /// <summary>
+        /// 启用键盘输入支持（添加到输入组并注册事件）
+        /// 注意：现在 textarea 在创建时会自动启用键盘输入，此方法保留为兼容性
+        /// </summary>
+        public void enable_keyboard_input()
+        {
+            // 由于构造函数已经自动启用键盘输入，此方法现在为空操作
+            // 保留此方法是为了兼容已有的 Lua 代码
+            Console.WriteLine($"[LvTextareaWrapper] enable_keyboard_input() called - already auto-enabled in constructor");
         }
 
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
