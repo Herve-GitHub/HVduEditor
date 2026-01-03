@@ -4,6 +4,7 @@ using SixLabors.Fonts;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -37,6 +38,16 @@ namespace LVGLSharp.Runtime.Windows
         static bool ignore_next_wmchar = false;
         static volatile int mouseWheelDelta = 0;
         static ConcurrentQueue<uint> key_queue = new ConcurrentQueue<uint>();
+        static volatile bool resizing = false;
+        
+        // 新增：用于跟踪渲染性能
+        static long lastRenderTime = 0;
+        static int skippedFrames = 0;
+        
+        // 新增：待处理的大小更新（避免在 WndProc 中直接操作 LVGL）
+        static volatile bool pendingResize = false;
+        static int pendingWidth = 0;
+        static int pendingHeight = 0;
 
         public static lv_obj_t* root { get; set; }
         public static lv_group_t* key_inputGroup { get; set; }
@@ -69,29 +80,85 @@ namespace LVGLSharp.Runtime.Windows
             bmiColors = new uint[256]
         };
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void ConvertRGB565ToBGRA(byte* src, byte* dst, int pixelCount)
         {
-            for (int i = 0; i < pixelCount; i++)
+            ushort* srcPtr = (ushort*)src;
+            uint* dstPtr = (uint*)dst;
+            
+            // 批量处理，减少循环开销
+            int i = 0;
+            int unrolled = pixelCount - 3;
+            
+            for (; i < unrolled; i += 4)
             {
-                ushort rgb565 = ((ushort*)src)[i];
-                byte r = (byte)(((rgb565 >> 11) & 0x1F) << 3);
-                byte g = (byte)(((rgb565 >> 5) & 0x3F) << 2);
-                byte b = (byte)((rgb565 & 0x1F) << 3);
-                dst[i * 4 + 0] = b; // BGRA
-                dst[i * 4 + 1] = g;
-                dst[i * 4 + 2] = r;
-                dst[i * 4 + 3] = 0xFF;
+                ushort rgb0 = srcPtr[i];
+                ushort rgb1 = srcPtr[i + 1];
+                ushort rgb2 = srcPtr[i + 2];
+                ushort rgb3 = srcPtr[i + 3];
+                
+                dstPtr[i] = (uint)(
+                    ((rgb0 & 0x1F) << 3) |           // B
+                    (((rgb0 >> 5) & 0x3F) << 10) |   // G
+                    (((rgb0 >> 11) & 0x1F) << 19) |  // R
+                    0xFF000000);                      // A
+                    
+                dstPtr[i + 1] = (uint)(
+                    ((rgb1 & 0x1F) << 3) |
+                    (((rgb1 >> 5) & 0x3F) << 10) |
+                    (((rgb1 >> 11) & 0x1F) << 19) |
+                    0xFF000000);
+                    
+                dstPtr[i + 2] = (uint)(
+                    ((rgb2 & 0x1F) << 3) |
+                    (((rgb2 >> 5) & 0x3F) << 10) |
+                    (((rgb2 >> 11) & 0x1F) << 19) |
+                    0xFF000000);
+                    
+                dstPtr[i + 3] = (uint)(
+                    ((rgb3 & 0x1F) << 3) |
+                    (((rgb3 >> 5) & 0x3F) << 10) |
+                    (((rgb3 >> 11) & 0x1F) << 19) |
+                    0xFF000000);
+            }
+            
+            // 处理剩余像素
+            for (; i < pixelCount; i++)
+            {
+                ushort rgb565 = srcPtr[i];
+                dstPtr[i] = (uint)(
+                    ((rgb565 & 0x1F) << 3) |
+                    (((rgb565 >> 5) & 0x3F) << 10) |
+                    (((rgb565 >> 11) & 0x1F) << 19) |
+                    0xFF000000);
             }
         }
 
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
         static unsafe void FlushCb(lv_display_t* disp_drv, lv_area_t* area, byte* color_p)
         {
-            lock (renderLock)
+            // 如果正在调整大小，跳过渲染
+            if (resizing || pendingResize)
             {
-                int width = area->x2 - area->x1 + 1;
-                int height = area->y2 - area->y1 + 1;
-                int pixelCount = width * height;
+                lv_display_flush_ready(disp_drv);
+                return;
+            }
+
+            int width = area->x2 - area->x1 + 1;
+            int height = area->y2 - area->y1 + 1;
+            int pixelCount = width * height;
+
+            // 使用 Monitor.TryEnter 避免阻塞，超时立即放弃
+            bool lockTaken = false;
+            try
+            {
+                lockTaken = Monitor.TryEnter(renderLock, 0);
+                if (!lockTaken)
+                {
+                    skippedFrames++;
+                    lv_display_flush_ready(disp_drv);
+                    return;
+                }
 
                 fixed (byte* pBGRA = bgraBuf)
                 {
@@ -108,9 +175,16 @@ namespace LVGLSharp.Runtime.Windows
                         (IntPtr)pBGRA, ref _bmi, 0);
                     ReleaseDC(g_hwnd, hdc);
                 }
-
-                lv_display_flush_ready(disp_drv);
+                
+                lastRenderTime = Stopwatch.GetTimestamp();
             }
+            finally
+            {
+                if (lockTaken)
+                    Monitor.Exit(renderLock);
+            }
+
+            lv_display_flush_ready(disp_drv);
         }
 
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -194,26 +268,32 @@ namespace LVGLSharp.Runtime.Windows
                     g_running = false;
                     PostQuitMessage(0);
                     break;
+                case 0x0231: // WM_ENTERSIZEMOVE - 开始调整大小或移动
+                    resizing = true;
+                    break;
+                case 0x0232: // WM_EXITSIZEMOVE - 结束调整大小或移动
+                    resizing = false;
+                    // 标记需要在主循环中处理 resize
+                    if (pendingWidth > 0 && pendingHeight > 0)
+                    {
+                        pendingResize = true;
+                    }
+                    break;
                 case 0x0005: // WM_SIZE
-                    lock (renderLock)
                     {
                         int newWidth = lParam.ToInt32() & 0xFFFF;
                         int newHeight = (lParam.ToInt32() >> 16) & 0xFFFF;
-                        if (newWidth > 0 && newHeight > 0)
+                        if (newWidth > 0 && newHeight > 0 && (newWidth != Width || newHeight != Height))
                         {
-                            Width = newWidth;
-                            Height = newHeight;
-                            uint newBufSize = (uint)(Width * Height * 4);
-                            if (newBufSize > g_bufSize)
+                            // 只记录新尺寸，不在 WndProc 中直接操作 LVGL
+                            pendingWidth = newWidth;
+                            pendingHeight = newHeight;
+                            
+                            // 如果不在拖动调整大小过程中，立即标记需要处理
+                            if (!resizing)
                             {
-                                g_bufSize = newBufSize;
-                                bgraBuf = new byte[g_bufSize];
-                                Marshal.FreeHGlobal(g_lvbuf);
-                                g_lvbuf = Marshal.AllocHGlobal((int)g_bufSize);
-                                lv_display_set_buffers(g_display, g_lvbuf.ToPointer(), null, g_bufSize, LV_DISPLAY_RENDER_MODE_FULL);
+                                pendingResize = true;
                             }
-                            // 更新分辨率
-                            lv_display_set_resolution(g_display, Width, Height);
                         }
                     }
                     break;
@@ -314,6 +394,47 @@ namespace LVGLSharp.Runtime.Windows
                     }
             }
             return DefWindowProc(hWnd, msg, wParam, lParam);
+        }
+        
+        /// <summary>
+        /// 在主循环中安全地处理待处理的窗口大小调整
+        /// </summary>
+        static void ProcessPendingResize()
+        {
+            if (!pendingResize)
+                return;
+                
+            pendingResize = false;
+            
+            int newWidth = pendingWidth;
+            int newHeight = pendingHeight;
+            
+            if (newWidth <= 0 || newHeight <= 0)
+                return;
+                
+            if (newWidth == Width && newHeight == Height)
+                return;
+            
+            // 在主循环中安全地更新
+            lock (renderLock)
+            {
+                Width = newWidth;
+                Height = newHeight;
+                uint newBufSize = (uint)(Width * Height * 4);
+                if (newBufSize > g_bufSize)
+                {
+                    g_bufSize = newBufSize;
+                    bgraBuf = new byte[g_bufSize];
+                    Marshal.FreeHGlobal(g_lvbuf);
+                    g_lvbuf = Marshal.AllocHGlobal((int)g_bufSize);
+                    lv_display_set_buffers(g_display, g_lvbuf.ToPointer(), null, g_bufSize, LV_DISPLAY_RENDER_MODE_FULL);
+                }
+                // 更新分辨率
+                lv_display_set_resolution(g_display, Width, Height);
+            }
+            
+            // 触发重绘
+            lv_obj_invalidate(lv_scr_act());
         }
 
         private string _title;
@@ -428,19 +549,46 @@ namespace LVGLSharp.Runtime.Windows
 
         public void StartLoop(Action handle)
         {
+            var sw = Stopwatch.StartNew();
+            long lastFrameTime = 0;
+            const long targetFrameTimeMs = 8; // ~120 FPS 上限，减少 CPU 占用
+            
             while (g_running)
             {
-                lv_timer_handler();
-                handle?.Invoke();
-                if (PeekMessage(out msg, IntPtr.Zero, 0, 0, 1))
+                // 处理所有待处理的消息
+                while (PeekMessage(out msg, IntPtr.Zero, 0, 0, 1))
                 {
-                    if (msg.message == 0x0012)
+                    if (msg.message == 0x0012) // WM_QUIT
+                    {
+                        g_running = false;
                         break;
+                    }
                     TranslateMessage(ref msg);
                     DispatchMessage(ref msg);
                 }
 
-                Thread.Sleep(5);
+                if (!g_running)
+                    break;
+
+                // 在主循环中安全地处理窗口大小调整
+                ProcessPendingResize();
+
+                // 只有不在调整大小时才处理 LVGL
+                if (!resizing)
+                {
+                    lv_timer_handler();
+                    handle?.Invoke();
+                }
+
+                // 动态调整休眠时间，减少 CPU 占用
+                long elapsed = sw.ElapsedMilliseconds - lastFrameTime;
+                if (elapsed < targetFrameTimeMs)
+                {
+                    int sleepTime = (int)(targetFrameTimeMs - elapsed);
+                    if (sleepTime > 0)
+                        Thread.Sleep(sleepTime);
+                }
+                lastFrameTime = sw.ElapsedMilliseconds;
             }
 
             g_running = false;

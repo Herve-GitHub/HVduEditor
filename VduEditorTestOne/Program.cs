@@ -2,6 +2,7 @@
 using LVGLSharp.Interop;
 using LVGLSharp.Runtime.Windows;
 using NLua;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Collections.Concurrent;
@@ -88,6 +89,10 @@ namespace VduEditorTestOne
         // 用于跟踪连续空闲帧数，避免频繁检查
         static int _emptyFrameCount = 0;
         
+        // 新增：用于事件节流的时间戳
+        static long _lastEventProcessTime = 0;
+        static readonly long _eventThrottleIntervalTicks = TimeSpan.FromMilliseconds(2).Ticks;
+
         /// <summary>
         /// 在主循环中安全地处理延迟的事件回调
         /// </summary>
@@ -109,13 +114,13 @@ namespace VduEditorTestOne
             _emptyFrameCount = 0;
             _isProcessingActions = true;
             
+            var startTime = Stopwatch.GetTimestamp();
+            var maxProcessingTicks = TimeSpan.FromMilliseconds(10).Ticks; // 每帧最多处理 10ms
+            
             try
             {
-                // 获取当前队列中的 action 数量快照，只处理这些
-                // 这样可以避免处理过程中新加入的 action 导致无限循环
-                int currentCount = _pendingActions.Count;
-                int maxActionsPerFrame = Math.Min(currentCount, 20); // 每帧最多处理20个
                 int processedCount = 0;
+                int maxActionsPerFrame = 50; // 增加每帧处理数量
                 
                 while (processedCount < maxActionsPerFrame && _pendingActions.TryDequeue(out var action))
                 {
@@ -128,18 +133,25 @@ namespace VduEditorTestOne
                     {
                         Console.WriteLine($"Error processing pending action: {ex.Message}");
                     }
+                    
+                    // 检查是否超时
+                    if (Stopwatch.GetTimestamp() - startTime > maxProcessingTicks)
+                    {
+                        break;
+                    }
                 }
                 
                 // 如果队列积压过多，输出警告
                 int remaining = _pendingActions.Count;
-                if (remaining > 100)
+                if (remaining > 200)
                 {
-                    Console.WriteLine($"[WARNING] Pending actions queue backlog: {remaining} actions waiting");
+                    Console.WriteLine($"[WARNING] Pending actions queue backlog: {remaining} actions waiting, processed: {processedCount}");
                 }
             }
             finally
             {
                 _isProcessingActions = false;
+                _lastEventProcessTime = Stopwatch.GetTimestamp();
             }
         }
 
@@ -672,16 +684,22 @@ namespace VduEditorTestOne
             var ptrCopy = ptr;
             Program._pendingActions.Enqueue(() =>
             {
-                // 添加到键盘输入组
-                lv_group_add_obj(Win32Window.key_inputGroup, ptrCopy);
-                
-                // 添加聚焦事件回调，用于设置 IME 候选框位置，并自动进入编辑模式
-                lv_obj_add_event_cb(ptrCopy, &OnTextareaFocused, LV_EVENT_FOCUSED, null);
-                
-                // 添加 PRESSED 事件回调，确保按下时立即将焦点设置到该 textarea
-                lv_obj_add_event_cb(ptrCopy, &OnTextareaPressed, LV_EVENT_PRESSED, null);
-                
-                Console.WriteLine($"[LvTextareaWrapper] Auto-enabled keyboard input for textarea at 0x{(IntPtr)ptrCopy:X}");
+                try {
+                    // 添加到键盘输入组
+                    lv_group_add_obj(Win32Window.key_inputGroup, ptrCopy);
+
+                    // 添加聚焦事件回调，用于设置 IME 候选框位置，并自动进入编辑模式
+                    lv_obj_add_event_cb(ptrCopy, &OnTextareaFocused, LV_EVENT_FOCUSED, null);
+
+                    // 添加 PRESSED 事件回调，确保按下时立即将焦点设置到该 textarea
+                    lv_obj_add_event_cb(ptrCopy, &OnTextareaPressed, LV_EVENT_PRESSED, null);
+
+                    Console.WriteLine($"[LvTextareaWrapper] Auto-enabled keyboard input for textarea at 0x{(IntPtr)ptrCopy:X}");
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[ERROR] Auto-enabled keyboard input {e.Message}");
+                }
             });
         }
         
