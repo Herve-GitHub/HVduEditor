@@ -13,7 +13,7 @@ PropertyArea.__index = PropertyArea
 PropertyArea.__widget_meta = {
     id = "property_area",
     name = "属性窗口",
-    description = "浮动属性窗口，显示所选控件属性",
+    description = "浮动属性窗口",
     schema_version = "1.0",
     version = "1.0",
 }

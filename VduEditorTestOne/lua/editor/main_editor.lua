@@ -8,7 +8,7 @@ local MenuBar = require("MenuBar")
 local CanvasArea = require("CanvasArea")
 local ToolsBox = require("tools_box")
 local PropertyArea = require("PropertyArea")
-
+local CanvasList = require("CanvasList")
 -- 获取屏幕
 local scr = lv.scr_act()
 
@@ -33,7 +33,6 @@ print("=== VDU 编辑器启动 ===")
 local WINDOW_WIDTH = 1024;
 local WINDOW_HEIGHT = 768;
 local MENUBAR_HEIGHT = 36
-local STATUSBAR_HEIGHT = 23
 
 -- ========== 创建菜单栏 ==========
 local menu_bar = MenuBar.new(scr, {
@@ -48,7 +47,7 @@ local canvas = CanvasArea.new(scr, {
     x = 0,
     y = MENUBAR_HEIGHT,
     width = WINDOW_WIDTH,
-    height = WINDOW_HEIGHT - MENUBAR_HEIGHT - STATUSBAR_HEIGHT,
+    height = WINDOW_HEIGHT - MENUBAR_HEIGHT,
     show_grid = false,
     snap_to_grid = false,
     grid_size = 20,
@@ -69,31 +68,19 @@ local property_area = PropertyArea.new(scr, {
     width = 300,
     visible = true
 })
-
+-- 创建画布列表窗口
+local canvas_list = CanvasList.new(scr, {
+    x = 10,
+    y = MENUBAR_HEIGHT + 10,
+    width = 280,
+    height = 400,
+    visible = true
+    })
 -- 同步菜单栏状态与画布/工具箱/属性窗口状态
 menu_bar:set_state("show_grid", canvas:is_grid_visible())
 menu_bar:set_state("snap_to_grid", canvas:is_snap_to_grid())
 menu_bar:set_state("show_toolbox", toolbox:is_visible())
 menu_bar:set_state("show_properties", property_area:is_visible())
-
--- 状态栏标签引用（后面会创建）
-local status_label = nil
-local time_label = ""
-
--- 更新状态栏
-local function update_status_bar()
-    if status_label then
-        local grid_status = canvas:is_grid_visible() and "显示" or "隐藏"
-        local snap_status = canvas:is_snap_to_grid() and "开启" or "关闭"
-        status_label:set_text("就绪 | 网格: " .. grid_status .. " | 对齐: " .. snap_status .. " | 网格大小: " .. canvas.props.grid_size .. "px | 当前时间:"..time_label)
-    end
-end
-
--- 更新时间显示
-local function update_time()
-    time_label = os.date("%H:%M:%S")
-    update_status_bar()
-end
 
 -- 菜单事件处理
 menu_bar:on("menu_action", function(self, menu_key, item_id)
@@ -127,13 +114,11 @@ menu_bar:on("menu_action", function(self, menu_key, item_id)
         local new_state = canvas:toggle_grid()
         menu_bar:set_state("show_grid", new_state)
         print("网格显示: " .. tostring(new_state))
-        update_status_bar()
     elseif item_id == "snap_to_grid" then
         -- 切换对齐到网格
         local new_state = canvas:toggle_snap_to_grid()
         menu_bar:set_state("snap_to_grid", new_state)
         print("对齐到网格: " .. tostring(new_state))
-        update_status_bar()
     elseif item_id == "show_toolbox" then
         -- 切换工具箱显示/隐藏
         toolbox:toggle()
@@ -234,29 +219,5 @@ property_area:on("visibility_changed", function(self, visible)
     print("[属性窗口] 可见性变化: " .. tostring(visible))
     menu_bar:set_state("show_properties", visible)
 end)
-
--- ========== 状态栏 ==========
-local status_bar = lv.obj_create(scr)
-status_bar:set_pos(0, WINDOW_HEIGHT - STATUSBAR_HEIGHT)
-status_bar:set_size(WINDOW_WIDTH, STATUSBAR_HEIGHT)
-status_bar:set_style_bg_color(0x007ACC, 0)
-status_bar:set_style_radius(0, 0)
-status_bar:set_style_border_width(0, 0)
-status_bar:set_style_pad_all(0, 0)
-status_bar:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
-status_bar:clear_layout()
-
-status_label = lv.label_create(status_bar)
-status_label:set_style_text_color(0xFFFFFF, 0)
-status_label:align(lv.ALIGN_LEFT_MID, 10, 0)
-
--- 初始化状态栏
-update_status_bar()
-update_time()
-
--- 创建定时器，每秒更新时间 (1000毫秒)
-local time_timer = lv.timer_create(function()
-    update_time()
-end, 1000)
 
 print("=== 编辑器初始化完成 ===")
