@@ -9,6 +9,9 @@ namespace LVGLSharp.Runtime.Windows
 {
     public class Win32Api
     {
+        // 窗口句柄（由 Win32Window 设置）
+        public static IntPtr g_hwnd { get; set; }
+        
         public const int WM_MOUSEWHEEL = 0x020A;
         public const int WHEEL_DELTA = 120;
 

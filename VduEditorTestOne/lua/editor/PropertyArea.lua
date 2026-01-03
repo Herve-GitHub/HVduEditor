@@ -2,6 +2,8 @@
 -- 浮动属性窗口：样式参考属性窗口，但不包含工具列表内容
 local lv = require("lvgl")
 local gen = require("general")
+-- 移除 ColorDialog 引用，改用文本输入
+-- local ColorDialog = require("ColorDialog")
 -- 获取屏幕
 local scr = lv.scr_act()
 
@@ -611,10 +613,13 @@ end
 
 -- 创建复选框
 function PropertyArea:_create_checkbox_input(prop_name, value, is_read_only, widget_entry, y_pos)
+    local this = self
+    local is_checked = value and true or false
+    
     local checkbox = lv.obj_create(self.content)
     checkbox:set_pos(95, y_pos + 2)
     checkbox:set_size(20, 20)
-    checkbox:set_style_bg_color(value and 0x007ACC or 0x1E1E1E, 0)
+    checkbox:set_style_bg_color(is_checked and 0x007ACC or 0x1E1E1E, 0)
     checkbox:set_style_border_width(1, 0)
     checkbox:set_style_border_color(0x555555, 0)
     checkbox:set_style_radius(0, 0)  -- 矩形，无圆角
@@ -623,32 +628,92 @@ function PropertyArea:_create_checkbox_input(prop_name, value, is_read_only, wid
     
     if not is_read_only then
         checkbox:add_flag(lv.OBJ_FLAG_CLICKABLE)
+        
+        -- 添加点击事件回调
+        checkbox:add_event_cb(function(e)
+            -- 切换状态
+            is_checked = not is_checked
+            
+            -- 更新复选框颜色
+            checkbox:set_style_bg_color(is_checked and 0x007ACC or 0x1E1E1E, 0)
+            
+            -- 更新控件属性
+            if widget_entry.instance and widget_entry.instance.set_property then
+                widget_entry.instance:set_property(prop_name, is_checked)
+            end
+            this:_emit("property_changed", prop_name, is_checked, widget_entry)
+            
+            print("[属性窗口] 布尔属性已更新: " .. prop_name .. " = " .. tostring(is_checked))
+        end, lv.EVENT_CLICKED, nil)
     end
 end
 
--- 创建颜色选择框
+-- 创建颜色选择框（改为文本输入方式）
 function PropertyArea:_create_color_input(prop_name, value, is_read_only, widget_entry, y_pos)
-    local color_box = lv.obj_create(self.content)
-    color_box:set_pos(95, y_pos + 2)
-    color_box:set_size(40, 20)
+    local this = self
     
-    -- 解析颜色值
-    local color = 0x007ACC
+    -- 解析颜色值，转换为 #RRGGBB 格式
+    local color_hex = "#007ACC"
+    local color_num = 0x007ACC
     if type(value) == "number" then
-        color = value
+        color_num = value
+        color_hex = string.format("#%06X", value)
     elseif type(value) == "string" and value:match("^#%x%x%x%x%x%x$") then
-        color = tonumber(value:sub(2), 16)
+        color_hex = value:upper()
+        color_num = tonumber(value:sub(2), 16)
     end
     
-    color_box:set_style_bg_color(color, 0)
+    -- 颜色预览框
+    local color_box = lv.obj_create(self.content)
+    color_box:set_pos(95, y_pos + 2)
+    color_box:set_size(20, 20)
+    color_box:set_style_bg_color(color_num, 0)
     color_box:set_style_border_width(1, 0)
     color_box:set_style_border_color(0x555555, 0)
-    color_box:set_style_radius(0, 0)  -- 矩形，无圆角
-    color_box:set_style_pad_all(0, 0)  -- 移除内边距
-    color_box:remove_flag(lv.OBJ_FLAG_SCROLLABLE)  -- 移除滚动条
+    color_box:set_style_radius(0, 0)
+    color_box:set_style_pad_all(0, 0)
+    color_box:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
     
-    if not is_read_only then
-        color_box:add_flag(lv.OBJ_FLAG_CLICKABLE)
+    -- 颜色文本输入框
+    local textarea = lv.textarea_create(self.content)
+    textarea:set_pos(120, y_pos + 2)
+    textarea:set_size(self.props.width - 135, 22)
+    textarea:set_style_bg_color(0x1E1E1E, 0)
+    textarea:set_style_border_width(1, 0)
+    textarea:set_style_border_color(0x555555, 0)
+    textarea:set_style_text_color(0xFFFFFF, 0)
+    textarea:set_style_radius(0, 0)
+    textarea:set_style_pad_all(2, 0)
+    textarea:set_style_pad_left(4, 0)
+    textarea:set_one_line(true)
+    textarea:set_text(color_hex)
+    textarea:set_accepted_chars("#0123456789ABCDEFabcdef")  -- 只接受十六进制字符
+    textarea:set_max_length(7)  -- #RRGGBB 共7个字符
+    textarea:remove_flag(lv.OBJ_FLAG_SCROLLABLE)
+    
+    if is_read_only then
+        textarea:add_state(lv.STATE_DISABLED)
+    else
+        -- 添加值变更事件回调
+        textarea:add_event_cb(function(e)
+            local new_value = textarea:get_text():upper()
+            
+            -- 验证格式是否正确
+            if new_value:match("^#%x%x%x%x%x%x$") then
+                local new_color_num = tonumber(new_value:sub(2), 16)
+                
+                -- 更新颜色预览框
+                color_box:set_style_bg_color(new_color_num, 0)
+                
+                -- 更新控件属性
+                if widget_entry.instance and widget_entry.instance.set_property then
+                    widget_entry.instance:set_property(prop_name, new_color_num)
+                end
+                this:_emit("property_changed", prop_name, new_color_num, widget_entry)
+                
+                print("[属性窗口] 颜色属性已更新: " .. prop_name .. " = " .. new_value)
+            end
+        end, lv.EVENT_VALUE_CHANGED, nil)
     end
 end
 

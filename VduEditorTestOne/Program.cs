@@ -176,6 +176,18 @@ namespace VduEditorTestOne
             lua["_lvgl_module.LAYOUT_FLEX"] = (int)lv_layout_t.LV_LAYOUT_FLEX;
             lua["_lvgl_module.LAYOUT_GRID"] = (int)lv_layout_t.LV_LAYOUT_GRID;
 
+            // ========== PART constants (for slider and other widgets) ==========
+            lua["_lvgl_module.PART_MAIN"] = (int)LV_PART_MAIN;
+            lua["_lvgl_module.PART_INDICATOR"] = (int)LV_PART_INDICATOR;
+            lua["_lvgl_module.PART_KNOB"] = (int)LV_PART_KNOB;
+            lua["_lvgl_module.PART_CURSOR"] = (int)LV_PART_CURSOR;
+            lua["_lvgl_module.PART_ITEMS"] = (int)LV_PART_ITEMS;
+            lua["_lvgl_module.PART_SCROLLBAR"] = (int)LV_PART_SCROLLBAR;
+            
+            // ========== ANIM constants ==========
+            lua["_lvgl_module.ANIM_OFF"] = false;
+            lua["_lvgl_module.ANIM_ON"] = true;
+
             // ========== Other constants ==========
             lua["_lvgl_module.RADIUS_CIRCLE"] = 0x7FFF; // LV_RADIUS_CIRCLE
 
@@ -444,7 +456,6 @@ namespace VduEditorTestOne
                 // Enqueue an action that logs start/end and invokes the Lua callback
                 _pendingActions.Enqueue(() =>
                 {
-                    //Console.WriteLine($"[PendingAction][Event] Start - event:{eventCode} target:{targetPtr} callback:{cb}");
                     try
                     {
                         cb.Call(new LvEventData(eventCode, targetPtr));
@@ -453,7 +464,6 @@ namespace VduEditorTestOne
                     {
                         Console.WriteLine($"Lua event callback error: {ex.Message}");
                     }
-                    //Console.WriteLine($"[PendingAction][Event] End - event:{eventCode} callback:{cb}");
                 });
             }
         }
@@ -1411,6 +1421,32 @@ namespace VduEditorTestOne
         public void set_style_shadow_opa(int opa, int selector)
         {
             lv_obj_set_style_shadow_opa(Ptr, (byte)opa, (uint)selector);
+        }
+
+        // ========== Slider methods ==========
+        
+        /// <summary>
+        /// 设置滑块范围（用于 slider）
+        /// </summary>
+        public void set_range(int min, int max)
+        {
+            lv_slider_set_range(Ptr, min, max);
+        }
+        
+        /// <summary>
+        /// 设置滑块值（用于 slider）
+        /// </summary>
+        public void set_value(int value, bool anim)
+        {
+            lv_slider_set_value(Ptr, value, anim);
+        }
+        
+        /// <summary>
+        /// 获取滑块值（用于 slider）
+        /// </summary>
+        public int get_value()
+        {
+            return lv_slider_get_value(Ptr);
         }
 
         public void add_event_cb(LuaFunction callback, int eventCode, object? userData)

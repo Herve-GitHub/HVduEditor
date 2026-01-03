@@ -234,11 +234,41 @@ namespace LVGLSharp.Runtime.Windows
                 case WM_IME_STARTCOMPOSITION:
                     ignore_next_wmchar = true;
                     break;
+                case 0x0100: // WM_KEYDOWN
+                    {
+                        uint vk = (uint)wParam;
+                        // 处理特殊键：退格、删除、方向键、回车等
+                        uint lvKey = 0;
+                        switch (vk)
+                        {
+                            case 0x08: lvKey = (uint)LV_KEY_BACKSPACE; break; // VK_BACK
+                            case 0x09: lvKey = (uint)LV_KEY_NEXT; break;      // VK_TAB
+                            case 0x0D: lvKey = (uint)LV_KEY_ENTER; break;     // VK_RETURN
+                            case 0x1B: lvKey = (uint)LV_KEY_ESC; break;       // VK_ESCAPE
+                            case 0x2E: lvKey = (uint)LV_KEY_DEL; break;       // VK_DELETE
+                            case 0x25: lvKey = (uint)LV_KEY_LEFT; break;      // VK_LEFT
+                            case 0x26: lvKey = (uint)LV_KEY_UP; break;        // VK_UP
+                            case 0x27: lvKey = (uint)LV_KEY_RIGHT; break;     // VK_RIGHT
+                            case 0x28: lvKey = (uint)LV_KEY_DOWN; break;      // VK_DOWN
+                            case 0x24: lvKey = (uint)LV_KEY_HOME; break;      // VK_HOME
+                            case 0x23: lvKey = (uint)LV_KEY_END; break;       // VK_END
+                        }
+                        if (lvKey != 0)
+                        {
+                            key_queue.Enqueue(lvKey);
+                        }
+                    }
+                    break;
                 case 0x0102: // WM_CHAR
                     if (ignore_next_wmchar)
                         break;
 
-                    key_queue.Enqueue((uint)wParam);
+                    // 过滤控制字符（退格、回车等已在 WM_KEYDOWN 处理）
+                    uint charCode = (uint)wParam;
+                    if (charCode >= 32) // 只处理可打印字符
+                    {
+                        key_queue.Enqueue(charCode);
+                    }
                     break;
                 case 0x0101: // WM_KEYUP
                     if (ignore_next_wmchar)
@@ -342,6 +372,9 @@ namespace LVGLSharp.Runtime.Windows
                 windowX, windowY, Width, Height,
                 IntPtr.Zero, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero
             );
+            
+            // 设置公开的窗口句柄供其他组件使用
+            Win32Api.g_hwnd = g_hwnd;
 
             ShowWindow(g_hwnd, 5);
             UpdateWindow(g_hwnd);
