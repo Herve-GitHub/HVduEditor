@@ -91,6 +91,11 @@ namespace LVGLSharp.Runtime.Windows
         [DllImport("user32.dll", EntryPoint = "DefWindowProcW", CharSet = CharSet.Unicode)]
         public static extern int DefWindowProc(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam);
 
+        public const int WM_PAINT = 0x000F;
+
+        [DllImport("user32.dll")]
+        public static extern bool ValidateRect(IntPtr hWnd, IntPtr lpRect);
+
         public const int WM_IME_STARTCOMPOSITION = 0x010D;
         public const int WM_IME_ENDCOMPOSITION = 0x010E;
         public const int WM_IME_COMPOSITION = 0x010F;
