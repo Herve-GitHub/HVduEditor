@@ -49,6 +49,9 @@ namespace LVGLSharp.Runtime.Windows
         static int pendingWidth = 0;
         static int pendingHeight = 0;
 
+        // 新增：待处理的重绘请求（窗口移动或从最小化恢复后需要重绘）
+        static volatile bool pendingRedraw = false;
+
         public static lv_obj_t* root { get; set; }
         public static lv_group_t* key_inputGroup { get; set; }
         public static delegate* unmanaged[Cdecl]<lv_event_t*, void> SendTextAreaFocusCb { get; set; } = &HandleSendTextAreaFocusCb;
@@ -264,6 +267,12 @@ namespace LVGLSharp.Runtime.Windows
         {
             switch (msg)
             {
+                case WM_PAINT:
+                    // 通知 Windows 更新区域已处理，避免持续收到 WM_PAINT
+                    ValidateRect(hWnd, IntPtr.Zero);
+                    // 通知主循环触发 LVGL 重绘（从最小化恢复或被覆盖后）
+                    pendingRedraw = true;
+                    return IntPtr.Zero;
                 case WM_DESTROY:
                     g_running = false;
                     PostQuitMessage(0);
@@ -278,21 +287,31 @@ namespace LVGLSharp.Runtime.Windows
                     {
                         pendingResize = true;
                     }
+                    // 窗口移动或大小调整结束后，始终触发重绘
+                    pendingRedraw = true;
                     break;
                 case 0x0005: // WM_SIZE
                     {
                         int newWidth = lParam.ToInt32() & 0xFFFF;
                         int newHeight = (lParam.ToInt32() >> 16) & 0xFFFF;
-                        if (newWidth > 0 && newHeight > 0 && (newWidth != Width || newHeight != Height))
+                        if (newWidth > 0 && newHeight > 0)
                         {
-                            // 只记录新尺寸，不在 WndProc 中直接操作 LVGL
-                            pendingWidth = newWidth;
-                            pendingHeight = newHeight;
-                            
-                            // 如果不在拖动调整大小过程中，立即标记需要处理
-                            if (!resizing)
+                            if (newWidth != Width || newHeight != Height)
                             {
-                                pendingResize = true;
+                                // 只记录新尺寸，不在 WndProc 中直接操作 LVGL
+                                pendingWidth = newWidth;
+                                pendingHeight = newHeight;
+                                
+                                // 如果不在拖动调整大小过程中，立即标记需要处理
+                                if (!resizing)
+                                {
+                                    pendingResize = true;
+                                }
+                            }
+                            else
+                            {
+                                // 尺寸不变（如从最小化恢复），仅触发重绘
+                                pendingRedraw = true;
                             }
                         }
                     }
@@ -576,6 +595,12 @@ namespace LVGLSharp.Runtime.Windows
                 // 只有不在调整大小时才处理 LVGL
                 if (!resizing)
                 {
+                    // 处理待处理的重绘请求（移动窗口或从最小化恢复后）
+                    if (pendingRedraw)
+                    {
+                        pendingRedraw = false;
+                        lv_obj_invalidate(lv_scr_act());
+                    }
                     lv_timer_handler();
                     handle?.Invoke();
                 }
